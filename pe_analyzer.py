@@ -44,8 +44,9 @@ root_dir = "/root/pe_classify/"
 pefile_dir = os.path.join(root_dir, '2017game_train')
 train_csv = os.path.join(root_dir, '2017game_train.csv')
 imp_name_path = os.path.join(root_dir, 'imp_names_map.dat')
+ops_x_path = os.path.join(root_dir, 'ops.npz')
+imp_x_path = os.path.join(root_dir, 'imp.npz')
 train_data_path = os.path.join(root_dir, 'train_data.p')
-imp_name_path = os.path.join(root_dir, 'imp_names_map.dat')
 
 opcode_dir = '/root/pe_classify/2017game_train_opcode'
 asm_dir = '/root/pe_classify/2017game_train_asm'
@@ -224,6 +225,8 @@ if __name__ == "__main__":
     log.info("get_ops cost %.2f seconds." % (end - start))
 
     ops_x = gen_x(ops)
+    np.savez_compressed(ops_x_path, ops_x)
+    # ops_x = np.load(ops_x_path)['arr_0']
     log.info('gen ops_x finished')
 
     # process import table
@@ -250,16 +253,18 @@ if __name__ == "__main__":
     end = time.time()
     log.info("vectorize_imp_name cost %.2f seconds." % (end - start))
 
-    imp_y = pd.factorize(train_label['type'])
-    imp_y = to_categorical(imp_y[0], nb_class)
-
     imp_x = np.array(imp_names_vectorize)
     imp_x = np.reshape(imp_x, (imp_x.shape[0], width, width, 1))
+    np.savez_compressed(imp_x_path, imp_x)
+    # imp_x = np.load(imp_x_path)['arr_0']
+
+    imp_y = pd.factorize(train_label['type'])
+    imp_y = to_categorical(imp_y[0], nb_class)
     log.info('imp_x.shape: %s, ops_x.shape: %s, imp_y.shape: %s' % (imp_x.shape, ops_x.shape, imp_y.shape))
 
     # model = combined_convs_model()
     # model.fit([ops_x, imp_x], imp_y, validation_split=0.1, epochs=epochs, batch_size=batch_size)
-    # sys.exit()
+    sys.exit()
 
     input_tensor = Input(shape=(width, width, 1))
     model = Xception(input_tensor=input_tensor, weights=None, classes=nb_class)
