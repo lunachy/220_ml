@@ -64,7 +64,6 @@ def cal_attacks(ip_addr, today):
 #     print result['pattackPhase_s']
 #     if i > 3:
 #         break
-
 # sys.exit()
 
 
@@ -208,16 +207,17 @@ def apt_relate(tda_solr):
         if len(uuid0_results) == 0:
             break
         for r in uuid0_results:
-            if (datetime.now() - datetime.strptime(r['logTime_s'],
-                                                   "%b %d %Y %H:%M:%S GMT+08:00")).seconds > 24 * 60 * 60:
+            if (datetime.now() - datetime.strptime(r['logTime_dt'],
+                                                   "%Y-%m-%dT%H:%M:%SZ")).seconds > 24 * 60 * 60:
                 update_uuid1(r['id'], '1')
 
 
 if __name__ == '__main__':
-    ip_addr = 'http://10.21.17.209:8181'
+    ip_addr = 'http://10.21.17.207:8181'
     time_now = datetime.now()
     today = datetime.now().strftime('%Y%m%d')
     tda_solr = Solr('{0}/solr/tda_{1}'.format(ip_addr, today))
+    # tda_solr.delete(q='*:*')
     # set_pattack(tda_solr)
     apt_relate(tda_solr)
 

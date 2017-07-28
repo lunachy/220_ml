@@ -214,19 +214,19 @@ if __name__ == "__main__":
     log.info('train_label.shape: %s', train_label.shape)
     nb_class = len(set(train_label["type"]))
 
-    # process opcode
-    os.chdir(asm_dir)
-    start = time.time()
-    pool = Pool(processes=CPU_COUNT, initializer=init_worker, maxtasksperchild=400)
-    ops = pool.map(get_ops, md5s)
-    pool.close()
-    pool.join()
-    end = time.time()
-    log.info("get_ops cost %.2f seconds." % (end - start))
+    # # process opcode
+    # os.chdir(asm_dir)
+    # start = time.time()
+    # pool = Pool(processes=CPU_COUNT, initializer=init_worker, maxtasksperchild=400)
+    # ops = pool.map(get_ops, md5s)
+    # pool.close()
+    # pool.join()
+    # end = time.time()
+    # log.info("get_ops cost %.2f seconds." % (end - start))
 
-    ops_x = gen_x(ops)
-    np.savez_compressed(ops_x_path, ops_x)
-    # ops_x = np.load(ops_x_path)['arr_0']
+    # ops_x = gen_x(ops)
+    # np.savez_compressed(ops_x_path, ops_x)
+    ops_x = np.load(ops_x_path)['arr_0']
     log.info('gen ops_x finished')
 
     # process import table
@@ -245,18 +245,20 @@ if __name__ == "__main__":
     # IMP_NAMES = reduce(lambda x, y: x | y, [set(imp_names) for imp_names in imp_names_list])
     # log.info('get IMP_NAMES successfully, length of IMP_NAMES: %s', len(IMP_NAMES))
     # sys.exit()
-    start = time.time()
-    pool = Pool(processes=CPU_COUNT, initializer=init_worker, maxtasksperchild=400)
-    imp_names_vectorize = pool.map(vectorize_imp_name, md5s)
-    pool.close()
-    pool.join()
-    end = time.time()
-    log.info("vectorize_imp_name cost %.2f seconds." % (end - start))
 
-    imp_x = np.array(imp_names_vectorize)
-    imp_x = np.reshape(imp_x, (imp_x.shape[0], width, width, 1))
-    np.savez_compressed(imp_x_path, imp_x)
-    # imp_x = np.load(imp_x_path)['arr_0']
+    # start = time.time()
+    # pool = Pool(processes=CPU_COUNT, initializer=init_worker, maxtasksperchild=400)
+    # imp_names_vectorize = pool.map(vectorize_imp_name, md5s)
+    # pool.close()
+    # pool.join()
+    # end = time.time()
+    # log.info("vectorize_imp_name cost %.2f seconds." % (end - start))
+    #
+    # imp_x = np.array(imp_names_vectorize)
+    # imp_x = np.reshape(imp_x, (imp_x.shape[0], width, width, 1))
+    # np.savez_compressed(imp_x_path, imp_x)
+    imp_x = np.load(imp_x_path)['arr_0']
+    log.info('gen imp_x finished')
 
     imp_y = pd.factorize(train_label['type'])
     imp_y = to_categorical(imp_y[0], nb_class)
