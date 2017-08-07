@@ -213,6 +213,7 @@ def apt_relate(tda_solr):
 
 
 if __name__ == '__main__':
+    # ip_addr = 'http://10.15.42.19:8181'
     ip_addr = 'http://10.21.17.207:8181'
     time_now = datetime.now()
     today = datetime.now().strftime('%Y%m%d')
