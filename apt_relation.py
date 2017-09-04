@@ -16,14 +16,28 @@ def cal_attacks(ip_addr, today):
     waf_solr = Solr('{0}/solr/waf_{1}'.format(ip_addr, today))
     ids_solr = Solr('{0}/solr/ids_{1}'.format(ip_addr, today))
 
-    threat_types_result = tda_solr.search('*:*', facet='on', **{'facet.field': ['threatType_s']})
-    # [u'1', 25662, u'2', 16844, u'4', 3503, u'0', 639, u'3', 29]
-    values = threat_types_result.facets['facet_fields']['threatType_s']
-    threat_types = defaultdict(lambda: 0, zip(values[0::2], values[1::2]))
+    try:
+        threat_types_result = tda_solr.search('*:*', facet='on', **{'facet.field': ['threatType_s']})
+        # [u'1', 25662, u'2', 16844, u'4', 3503, u'0', 639, u'3', 29]
+        _values = threat_types_result.facets['facet_fields']['threatType_s']
+        threat_types = defaultdict(lambda: 0, zip(_values[0::2], _values[1::2]))
+    except:
+        threat_types = defaultdict(lambda: 0, zip([str(i) for i in range(7)], [0] * 7))
 
-    waf_attacks = waf_solr.search('*:*').hits
-    tda_attacks = tda_solr.search('*:*').hits
-    ids_attacks = ids_solr.search('*:*').hits
+    try:
+        waf_attacks = waf_solr.search('*:*').hits
+    except:
+        waf_attacks = 0
+
+    try:
+        tda_attacks = tda_solr.search('*:*').hits
+    except:
+        tda_attacks = 0
+
+    try:
+        ids_attacks = ids_solr.search('*:*').hits
+    except:
+        ids_attacks = 0
     all_attacks = tda_attacks + waf_attacks + ids_attacks
 
     # 0: Malicious content
@@ -46,25 +60,6 @@ def cal_attacks(ip_addr, today):
     conn.commit()
     cur.close()
     conn.close()
-
-
-# start = 0
-# all_results = []
-# solr = Solr("http://10.21.17.209:8181/solr/tda_20170614")
-# solr.delete(q='*:*')
-# while True:
-#     results = solr.search('pattackPhase_s:*', start=start, rows=100)
-#     start += len(results)
-#     if len(results) == 0:
-#         break
-#     all_results += results.docs
-# print start, len(all_results)
-#
-# for i, result in enumerate(all_results):
-#     print result['pattackPhase_s']
-#     if i > 3:
-#         break
-# sys.exit()
 
 
 def update_uuid1(id0, uuid1):
@@ -99,25 +94,6 @@ def solr_search(ap, direction, RelationUUID=0):
 
 def apt_relate(tda_solr):
     start = 0
-    # results0 = []
-    # results1 = []
-    # for i, ap in enumerate(aps):
-    #     if i == 1:  # 'Point\ of\ Entry'
-    #         fq0 = ['pattackPhase_s:{}'.format(ap), 'direction_s:0']
-    #         fq1 = ['pattackPhase_s:{}'.format(ap), 'direction_s:1']
-    #     else:
-    #         fq0 = ['pattackPhase_s:{}'.format(ap), 'direction_s:0', 'RelationUUID_s:0']
-    #         fq1 = ['pattackPhase_s:{}'.format(ap), 'direction_s:1', 'RelationUUID_s:0']
-    #
-    #     r0 = tda_solr.search('*:*', fq=fq0, rows=10000)
-    #     r1 = tda_solr.search('*:*', fq=fq1, rows=10000)
-    #     print ap, r0.hits, r1.hits
-    #     results0.append(r0)
-    #     results1.append(r1)
-
-    # print map(lambda x: len(x), results0), map(lambda x: len(x), results1)
-    # outer---point of entry
-    # for r01 in results0[1]:
     for r01 in solr_search(aps[1], 0, 1):
         uuid1 = r01['RelationUUID_s']
         # phase0 < --->phase1
@@ -220,17 +196,17 @@ if __name__ == '__main__':
     tda_solr = Solr('{0}/solr/tda_{1}'.format(ip_addr, today))
     # tda_solr.delete(q='*:*')
     # set_pattack(tda_solr)
-    apt_relate(tda_solr)
+    # apt_relate(tda_solr)
 
-    # while True:
-    #     try:
-    #         time_now = datetime.now()
-    #         today = time_now.strftime('%Y%m%d')
-    #         yesterday = (time_now - timedelta(days=1)).strftime('%Y%m%d')
-    #         if time_now.hour == 3:
-    #             cal_attacks(ip_addr, yesterday)
-    #         tda_solr = Solr('{0}/solr/tda_{1}'.format(ip_addr, today))
-    #         apt_relate(tda_solr)
-    #         sleep(1 * 60 * 60)
-    #     except Exception as e:
-    #         print e
+    while True:
+        try:
+            time_now = datetime.now()
+            today = time_now.strftime('%Y%m%d')
+            yesterday = (time_now - timedelta(days=1)).strftime('%Y%m%d')
+            if time_now.hour == 3:
+                cal_attacks(ip_addr, yesterday)
+            tda_solr = Solr('{0}/solr/tda_{1}'.format(ip_addr, today))
+            apt_relate(tda_solr)
+            sleep(1 * 60 * 60)
+        except Exception as e:
+            print e

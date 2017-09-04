@@ -28,14 +28,15 @@ import time
 def downloads_pic(pic_name):
     # url='http://smart.gzeis.edu.cn:8081/Content/AuthCode.aspx'
 
-    url = 'https://ebank.96138.com.cn/pweb/GenTokenImg.do?'
+    # url = 'https://ebank.96138.com.cn/pweb/GenTokenImg.do?'
+    url = 'https://www.mysubmail.com/sms/codeimg'
 
     res = requests.get(url,
                        stream=True)  ####在罕见的情况下你可能想获取来自服务器的原始套接字响应，那么你可以访问 r.raw如果你确实想这么干，那请你确保在初始请求中设置了stream=True
 
     # print res
 
-    with open('/root/captcha/raw_pic/%s.jpg' % (pic_name), 'wb') as f:
+    with open('/tmp/pic/%s.jpg' % (pic_name), 'wb') as f:
 
         print res.iter_content(chunk_size=1024)
 
@@ -55,7 +56,7 @@ def downloads_pic(pic_name):
 
 if __name__ == '__main__':
 
-    for i in range(1000):
+    for i in range(1):
         pic_name = int(time.time() * 1000000)  # 返回当前时间的时间戳（1970纪元后经过的浮点秒数）
 
         downloads_pic(pic_name)

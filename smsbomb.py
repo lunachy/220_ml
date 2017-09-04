@@ -16,16 +16,15 @@ valid_proxy = set()
 # inurl:register
 request_data = [
     {
-        "url": "http://www.huanrong18.com/pc/ruanjianxiazai20160907/action.php?type=check_telephone&telephone={}".format(
-            phone),
-        "data": {"telephone": phone, "type": "check_telephone"},
-        "headers": {'Accept': 'application/json, text/javascript, */*; q=0.01',
-                    'Accept-Encoding': 'gzip, deflate, sdch',
+        "url": "https://www.mysubmail.com/sms/sendTest",
+        "data": {"mob": phone, "code": ""},
+        "headers": {'Accept': '*/*;',
+                    'Accept-Encoding': 'gzip, deflate, br',
                     'Accept-Language': 'zh-CN,zh;q=0.8',
                     'Connection': 'keep-alive',
-                    'Cookie': 'acw_tc=AQAAAE6uSCe7dwkAM1le2quZgrwrmAY6; PHPSESSID=dpa2kma2qif1726s5o6uom4h06; Hm_lvt_937192137aabeba6cef4aac95ba76010=1491362691; Hm_lpvt_937192137aabeba6cef4aac95ba76010=1491362746',
-                    'Host': 'www.huanrong18.com',
-                    'Referer': 'http://www.huanrong18.com/pc/ruanjianxiazai20160907/',
+                    'Cookie': '_ga=GA1.2.220038243.1502074196; _gid=GA1.2.893667888.1502074196; Hm_lvt_0d41d1a3c6e225e9be0a19548c793607=1502074176; Hm_lpvt_0d41d1a3c6e225e9be0a19548c793607=1502075430; SUBMAIL=a%3A4%3A%7Bs%3A10%3A%22session_id%22%3Bs%3A32%3A%22b434005b6de53378783037fdc0a056ca%22%3Bs%3A10%3A%22ip_address%22%3Bs%3A12%3A%22218.94.89.51%22%3Bs%3A10%3A%22user_agent%22%3Bs%3A109%3A%22Mozilla%2F5.0+%28Windows+NT+10.0%3B+WOW64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F55.0.2883.87+Safari%2F537.36%22%3Bs%3A13%3A%22last_activity%22%3Bi%3A1502075428%3B%7D1bcba35957cabd23b1e8e35e9bfe4ba0',
+                    'Host': 'www.mysubmail.com',
+                    'Referer': 'https://www.mysubmail.com/sms',
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36',
                     'X-Requested-With': 'XMLHttpRequest', }
     },

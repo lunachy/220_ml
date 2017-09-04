@@ -47,6 +47,7 @@ imp_name_path = os.path.join(root_dir, 'imp_names_map.dat')
 ops_x_path = os.path.join(root_dir, 'ops.npz')
 imp_x_path = os.path.join(root_dir, 'imp.npz')
 train_data_path = os.path.join(root_dir, 'train_data.p')
+ops_md5_path = os.path.join(root_dir, 'ops_md5s.npz')
 
 opcode_dir = '/root/pe_classify/2017game_train_opcode'
 asm_dir = '/root/pe_classify/2017game_train_asm'
@@ -214,15 +215,18 @@ if __name__ == "__main__":
     log.info('train_label.shape: %s', train_label.shape)
     nb_class = len(set(train_label["type"]))
 
-    # # process opcode
-    # os.chdir(asm_dir)
-    # start = time.time()
-    # pool = Pool(processes=CPU_COUNT, initializer=init_worker, maxtasksperchild=400)
-    # ops = pool.map(get_ops, md5s)
-    # pool.close()
-    # pool.join()
-    # end = time.time()
-    # log.info("get_ops cost %.2f seconds." % (end - start))
+    # process opcode
+    os.chdir(asm_dir)
+    start = time.time()
+    pool = Pool(processes=CPU_COUNT, initializer=init_worker, maxtasksperchild=400)
+    ops = pool.map(get_ops, md5s)
+    log.info('get ops finished!')
+    np.savez_compressed(ops_md5_path, md5s, ops)
+    pool.close()
+    pool.join()
+    end = time.time()
+    log.info("get_ops cost %.2f seconds." % (end - start))
+    sys.exit()
 
     # ops_x = gen_x(ops)
     # np.savez_compressed(ops_x_path, ops_x)

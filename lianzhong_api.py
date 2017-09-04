@@ -65,15 +65,18 @@ def main(file_name):
     # {"result": true, "data": {"id": 8353571068, "val": "TYSK"}}
     # {"data": "", "result": false}
     result = json.loads(r.text)
-    if result['result']:
-        code = result['data']['val']
-        shutil.move(file_name, os.path.join(code_pic_path, code + '.jpg'))
-        print('rename {} to {} success!'.format(file_name, code))
-    else:
-        print('{} failed'.format(filename))
+    print result
+    # if result['result']:
+    #     code = result['data']['val']
+    #     shutil.move(file_name, os.path.join(code_pic_path, code + '.jpg'))
+    #     print('rename {} to {} success!'.format(file_name, code))
+    # else:
+    #     print('{} failed'.format(filename))
 
 
 if __name__ == '__main__':
+    main('/tmp/pic/1502075060092849.jpg')
+    sys.exit()
     os.chdir(pic_path)
     start = time()
     # for filename in os.listdir(pic_path):
