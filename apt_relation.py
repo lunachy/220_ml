@@ -210,3 +210,4 @@ if __name__ == '__main__':
             sleep(1 * 60 * 60)
         except Exception as e:
             print e
+            sleep(60)
