@@ -1,11 +1,14 @@
 #!/usr/bin/python
 # coding=utf-8
+import sys
+
+sys.path.append('/data1/aus/packages')
 from kafka import KafkaConsumer
 import json
 import time
-from datetime import datetime, timedelta
-from collections import defaultdict
 import MySQLdb
+import logging.handlers
+import traceback
 
 ips = set()
 timestep = 10 * 60  # 循环统计时间间隔
@@ -13,11 +16,29 @@ timestep_thresh = 60  # 登录间隔时间阈值
 
 ratio = 0.2
 login_thresh = 70  # 登录次数阈值
-HOST = '10.15.42.21'
-DBNAME = 'jsdx'  # 数据库名字，请修改
-USER = 'root'  # 数据库账号，请修改
-PASSWD = 'root'  # 数据库密码，请修改
-PORT = 3306  # 数据库端口，在dbhelper中使用
+HOST = '132.252.12.62'
+DBNAME = 'jsdx'
+USER = 'root'
+PASSWD = 'qazQAZ123'
+PORT = 3306
+
+kafka_addr = '132.224.229.6:9092'
+topic = 'linux-login'
+
+log = logging.getLogger('brute_force')
+
+
+def init_logging(log_file):
+    formatter = logging.Formatter('%(asctime)s [%(name)s] %(levelname)s: %(message)s')
+
+    fh = logging.handlers.WatchedFileHandler(log_file)
+    fh.setFormatter(formatter)
+    log.addHandler(fh)
+    ch = logging.StreamHandler()
+    ch.setFormatter(formatter)
+    log.addHandler(ch)
+
+    log.setLevel(logging.INFO)
 
 
 def get_timedelta(timestamps):
@@ -46,63 +67,66 @@ def get_brute_force_type(d_flat):
 
 
 def detect_brute():
-    start_time = 1510588681215
+    log.info('start detecting brute force.')
     while 1:
         d = {}  # count, srcs, users, success_sip_user, start_time, end_time, type, ifsuccess, collectTime
-        consumer = KafkaConsumer('linux-new3', bootstrap_servers='10.15.42.23:29092', auto_offset_reset='earliest')
-        for i, msg in enumerate(consumer):
+        # auto_offset_reset should set to 'latest' in real situation, 'earliest' just for test
+        try:
+            consumer = KafkaConsumer(topic, bootstrap_servers=kafka_addr, auto_offset_reset='latest')
+        except:
+            log.error('connect kafka failed, msg: %s', traceback.format_exc())
+            sys.exit()
+
+        for ct, msg in enumerate(consumer, 1):
+            # if ct > 2500: break  # just for test, about 2500 data records in 10min
             data = json.loads(msg.value)
             dst = data['equIP']
-            if int(data['collectTime']) < start_time + timestep * 1000:
-                if data['LoginResult_s'] == 'FAILURE':
-                    time_local = time.localtime(float(data['collectTime']) / 1000)
-                    dt = time.strftime('%Y-%m-%d %H:%M:%S', time_local)
-                    # print time_local, '\n', dt
+            if data['LoginResult_s'] == 'FAILURE':
+                time_local = time.localtime(float(data['collectTime']) / 1000)
+                dt = time.strftime('%Y-%m-%d %H:%M:%S', time_local)
+                # print time_local, '\n', dt
 
-                    if dst not in d:
-                        d[dst] = [1, {data['SourceIP_s']}, {data['LoginUser_s']}, set(), dt, '', '', 0,
-                                  [data['collectTime']]]
-                    else:
-                        d[dst][0] += 1
-                        d[dst][1].add(data['SourceIP_s'])
-                        d[dst][2].add(data['LoginUser_s'])
-                        d[dst][5] = dt
-                        d[dst][-1].append(data['collectTime'])
+                if dst not in d:
+                    d[dst] = [1, {data['SourceIP_s']}, {data['LoginUser_s']}, set(), dt, '', '', 0,
+                              [data['collectTime']]]
+                else:
+                    d[dst][0] += 1
+                    d[dst][1].add(data['SourceIP_s'])
+                    d[dst][2].add(data['LoginUser_s'])
+                    d[dst][5] = dt
+                    d[dst][-1].append(data['collectTime'])
 
-                if data['LoginResult_s'] == 'SUCCESS':
-                    if dst in d:
-                        if data['SourceIP_s'] in d[dst][1] and data['LoginUser_s'] in d[dst][2]:
-                            d[dst][7] = 1
-                            d[dst][3].add(','.join([data['SourceIP_s'], data['LoginUser_s']]))
-
-            else:
-                # filter that login count above thresh
-                # d = {k: v for k, v in d.items() if v[0] > thresh}
-
-                d_flat = map(lambda dst: [dst] + d[dst], d)
-                d_flat = map(get_brute_force_type, d_flat)
-
-                d_flat_f = filter(lambda x: x[7], d_flat)
-                items = map(lambda x: x[:-1], d_flat_f)
-
-                # break
-                conn = MySQLdb.connect(host=HOST, port=PORT, user=USER, passwd=PASSWD, db=DBNAME, charset="utf8")
-                cur = conn.cursor()
-                cur.executemany('insert into brute_force(dst, count, srcs, users, success_sip_user, '
-                                'start_time, end_time, type, ifsuccess) values(%s,%s,%s,%s,%s,%s,%s,%s,%s)', items)
-                conn.commit()
-                cur.close()
-                conn.close()
-
-                d = {}
-                start_time += timestep * 1000
-                break
-
+            if data['LoginResult_s'] == 'SUCCESS':
+                if dst in d:
+                    if data['SourceIP_s'] in d[dst][1] and data['LoginUser_s'] in d[dst][2]:
+                        d[dst][7] = 1
+                        d[dst][3].add(','.join([data['SourceIP_s'], data['LoginUser_s']]))
+        log.info('kafka data count: %s', ct)
         consumer.close()
 
-        break
+        d_flat = map(lambda dst: [dst] + d[dst], d)
+        d_flat = map(get_brute_force_type, d_flat)
+
+        d_flat_f = filter(lambda x: x[7], d_flat)
+        items = map(lambda x: x[:-1], d_flat_f)
+
+        try:
+            conn = MySQLdb.connect(host=HOST, port=PORT, user=USER, passwd=PASSWD, db=DBNAME, charset="utf8")
+            cur = conn.cursor()
+            cur.executemany('insert into brute_force(dst, count, srcs, users, success_sip_user, '
+                            'start_time, end_time, type, ifsuccess) values(%s,%s,%s,%s,%s,%s,%s,%s,%s)', items)
+            conn.commit()
+            cur.close()
+            conn.close()
+        except:
+            log.error('connect kafka failed, msg: '
+                      '%s', traceback.format_exc())
+        else:
+            log.info('insert data to mysql, count: %s', len(items))
+
         time.sleep(timestep)
 
 
 if __name__ == '__main__':
+    init_logging('/data1/aus/brute_force.log')
     detect_brute()
