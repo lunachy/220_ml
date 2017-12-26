@@ -9,6 +9,7 @@ import time
 import MySQLdb
 import logging.handlers
 import traceback
+from datetime import datetime
 
 ips = set()
 timestep = 10 * 60  # 循环统计时间间隔
@@ -17,7 +18,7 @@ timestep_thresh = 60  # 登录间隔时间阈值
 ratio = 0.2
 login_thresh = 70  # 登录次数阈值
 HOST = '132.252.12.62'
-DBNAME = 'jsdx'
+DBNAME = 'siap'
 USER = 'root'
 PASSWD = 'qazQAZ123'
 PORT = 3306
@@ -66,19 +67,57 @@ def get_brute_force_type(d_flat):
     return d_flat
 
 
+def filter_data(items, last_items):
+    if not last_items:
+        return [], items
+
+    new_items = []
+    same_items = []
+    for i in items:
+        for li in last_items:
+            if [i[0], i[2], i[3], i[7]] == [li[0], li[2], li[3], li[7]]:
+                i[1] = i[1] + li[1]
+                i[5] = li[5]
+                same_items.append(li)
+        new_items.append(i)
+    return same_items, new_items
+
+
+def insert_sql(same_items, new_item):
+    if new_item:
+        try:
+            conn = MySQLdb.connect(host=HOST, port=PORT, user=USER, passwd=PASSWD, db=DBNAME, charset="utf8")
+            cur = conn.cursor()
+            for i in same_items:
+                cur.execute('delete from brute_force where dst="{}" and start_time="{}"'.format(i[0], i[5]))
+            conn.commit()
+            log.info('duplicate data deleted: %s', len(same_items))
+
+            cur.executemany('insert into brute_force(dst, count, srcs, users, success_sip_user, '
+                            'start_time, end_time, type, ifsuccess) values(%s,%s,%s,%s,%s,%s,%s,%s,%s)', new_item)
+            conn.commit()
+            cur.close()
+            conn.close()
+        except:
+            log.error('insert data failed, msg: %s', traceback.format_exc())
+
+
 def detect_brute():
     log.info('start detecting brute force.')
+    # auto_offset_reset should set to 'latest' in real situation, 'earliest' just for test
+    try:
+        consumer = KafkaConsumer(topic, bootstrap_servers=kafka_addr, auto_offset_reset='latest')
+    except:
+        log.error('connect kafka failed, msg: %s', traceback.format_exc())
+        sys.exit()
+
+    last_items = []
     while 1:
         d = {}  # count, srcs, users, success_sip_user, start_time, end_time, type, ifsuccess, collectTime
-        # auto_offset_reset should set to 'latest' in real situation, 'earliest' just for test
-        try:
-            consumer = KafkaConsumer(topic, bootstrap_servers=kafka_addr, auto_offset_reset='latest')
-        except:
-            log.error('connect kafka failed, msg: %s', traceback.format_exc())
-            sys.exit()
-
+        t1 = datetime.now()
+        ct = 0
         for ct, msg in enumerate(consumer, 1):
-            # if ct > 2500: break  # just for test, about 2500 data records in 10min
+            # if ct > 3200: break  # just for test, about 3200 data records in 10min
             data = json.loads(msg.value)
             dst = data['equIP']
             if data['LoginResult_s'] == 'FAILURE':
@@ -101,30 +140,25 @@ def detect_brute():
                     if data['SourceIP_s'] in d[dst][1] and data['LoginUser_s'] in d[dst][2]:
                         d[dst][7] = 1
                         d[dst][3].add(','.join([data['SourceIP_s'], data['LoginUser_s']]))
+
+            if (datetime.now() - t1).seconds > timestep:
+                break
+
         log.info('kafka data count: %s', ct)
-        consumer.close()
 
         d_flat = map(lambda dst: [dst] + d[dst], d)
         d_flat = map(get_brute_force_type, d_flat)
 
         d_flat_f = filter(lambda x: x[7], d_flat)
         items = map(lambda x: x[:-1], d_flat_f)
+        log.info('brute_force count: %s', len(items))
 
-        try:
-            conn = MySQLdb.connect(host=HOST, port=PORT, user=USER, passwd=PASSWD, db=DBNAME, charset="utf8")
-            cur = conn.cursor()
-            cur.executemany('insert into brute_force(dst, count, srcs, users, success_sip_user, '
-                            'start_time, end_time, type, ifsuccess) values(%s,%s,%s,%s,%s,%s,%s,%s,%s)', items)
-            conn.commit()
-            cur.close()
-            conn.close()
-        except:
-            log.error('connect kafka failed, msg: '
-                      '%s', traceback.format_exc())
-        else:
-            log.info('insert data to mysql, count: %s', len(items))
+        same_items, new_item = filter_data(items, last_items)
+        last_items = new_item
 
-        time.sleep(timestep)
+        insert_sql(same_items, new_item)
+
+    # consumer.close()
 
 
 if __name__ == '__main__':
