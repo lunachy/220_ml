@@ -116,11 +116,10 @@ class AutoSqli(object):
         self.data = json.loads(
             requests.get(self.server + 'scan/' + self.taskid + '/data').text)['data']
         if len(self.data) == 0:
-            log.info('not injection')
-            pass
+            log.info('\033[1;32;40mno injection\033[0m')
         else:
             # insert_sql(item)
-            log.warning('injection')
+            log.warning('\033[1;33;40minjection\033[0m')
 
     def option_set(self):
         headers = {'Content-Type': 'application/json'}
