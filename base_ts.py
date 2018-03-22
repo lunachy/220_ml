@@ -57,6 +57,7 @@ def run_ariam_pf(df, maxar, maxma, diffn, test_size):
 def get_first_week(data, test_size, multiplier):
     a = data["Number"]
     predictions = np.repeat(np.median(a), test_size)
+    predictions = map(lambda x: np.int(x), predictions)
     mad = np.median(np.abs((a-np.median(a))))
     lowerbound = np.int(np.median(a)-multiplier*mad)
     lowerbound = 0 if lowerbound < 0 else lowerbound
@@ -86,7 +87,7 @@ def get_first_month(data, test_size, multiplier):
         try:
             new_predictions = [np.int(x) for x in new_ratio*predictions]
         except:
-            new_predictions = predictions
+            new_predictions = map(lambda x: np.int(x), predictions)
     lowerbound = 0 if lowerbound < 0 else lowerbound
     return new_predictions, lowerbound, upperbound
 
@@ -196,23 +197,71 @@ def get_Predictions_types(data, diffn,test_size, maxar=5, maxma=5, multiplier=2)
                     Predictions.append(predictions)
     return Predictions
 
-if __name__=="__main__":
-    file_path = 'R_ARIMA_DataSet1.csv'
-    df = pd.read_csv(file_path, header=None, names=['Number'])
-    t = datetime.now().date()
-    dates = pd.date_range(t - timedelta(days=127), t, freq="D")
-    df['Date'] = dates
-    df['Type'] = 1
-    df['Predict1'] = None
-    df['Predict1'][0:-7] = 1
-#### check run_ariam_pf
-    df.set_index('Date', inplace=True)
-    # df["Number"] = df["Number"].apply(lambda x: np.nan if x == -1 else x)
-    # df = df.interpolate(method='time')
-    predictions, new_lowerbound, new_upperbound = run_ariam_pf(df, maxar=5, maxma=5, diffn=0, test_size=7)
-####check get_Predictions_types
-# dataframe with columns = [u'ID', u'Date', u'Type', u'Number', u'Lowerbound', u'Upperbound',
-#                u'Predict1', u'Predict2',u'Predict3', u'Predict4',
-#                u'Predict5',u'Predict6', u'Predict7', u'new_lower', u'new_upper']
-    Predictions = get_Predictions_types(df, maxar=5, maxma=5, diffn=0, test_size=7)
+
+def get_Predictions_types_wo_bound(data, diffn,test_size, maxar=5, maxma=5, multiplier=2):
+    Predictions = []
+    if data.shape[0] != 0:
+        types = set(data["Type"])
+        for _type in types:
+            print(_type)
+            data_1 = data[data["Type"] == _type]
+            data_2 = data_1[data_1["Number"] == -1]
+            if data_1.shape[0] == data_2.shape[0]:
+                pass
+            else:
+                begin_date = sorted(data_1[data_1["Number"] != -1]["Date"])[0]
+                data_s = data_1[data_1["Date"] >= begin_date]
+                a = [(x is None) or (x != x) for x in data_s["Predict1"]]
+                dates = sorted(list(data_s[a]["Date"]))
+                print(dates)
+                for date in dates:
+                    df = data_s[data_s["Date"] <= date][["Date", "Number"]].sort_values("Date")
+                    if df[df["Number"] == 0].shape[0] == df.shape[0]:
+                        predictions = [0]*test_size
+                        #predictions.extend([date, _type])
+                        predictions = [str(predictions), date, _type]
+                    else:
+                        days = df.shape[0]
+                        if days <= 7:
+                            print("use first_week method")
+                            #threatNumber = df[df["Date"] == date]["Number"].item()
+                            df = df[df["Number"] != -1]
+                            predictions, _, _ = get_first_week(df, 7, multiplier)
+                            predictions = list(predictions)
+                            predictions.extend([0]*(test_size-7))
+                            #status = check_status(threatNumber, lowerbound, upperbound)
+                            #predictions.extend([date, _type])
+                            predictions = [str(predictions), date, _type]
+                        elif (days > 7) & (days <= 40):
+                            print("use first_month method")
+                            #threatNumber = df[df["Date"] == date]["Number"].item()
+                            df = df[df["Number"] != -1]
+                            predictions,  _, _ = get_first_month(df, 7, multiplier)
+                            predictions = list(predictions)
+                            predictions.extend([0] * (test_size - 7))
+                            #status = check_status(threatNumber, lowerbound, upperbound)
+                            #predictions.extend([date, _type])
+                            predictions = [str(predictions), date, _type]
+                        else:
+                            try:
+                                print("use time series method")
+                                df.set_index('Date', inplace=True)
+                                df["Number"] = df["Number"].apply(lambda x: np.nan if x == -1 else x)
+                                df = df.interpolate(method='time')
+                                threatNumber = df.loc[date].item()
+                                predictions,  _, _ = run_ariam_pf(df, maxar, maxma, diffn, test_size)
+                                #status = check_status(threatNumber, lowerbound, upperbound)
+                                predictions = list(predictions)
+                                predictions = check_stability(predictions, threatNumber)
+                                # predictions.extend([date, _type])
+                                predictions = [str(predictions), date, _type]
+                            except ValueError:
+                                print("use back up method")
+                                yday = list(data_1[data_1["Date"] == date - timedelta(days=1)].values[0])
+                                predictions = yday[5]
+                                #status = check_status(threatNumber, lowerbound, upperbound)
+                                #predictions.extend([date, _type])
+                                predictions = [str(predictions), date, _type]
+                    Predictions.append(predictions)
+    return Predictions
 
