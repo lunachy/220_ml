@@ -1,7 +1,7 @@
 # coding=utf-8
 import sys
 
-sys.path.append('/hadoop2/asap/python_package')
+sys.path.append('/hadoop2/asap/ssa/python_package')
 import os
 import pymysql
 from collections import defaultdict
