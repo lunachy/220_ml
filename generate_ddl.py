@@ -19,10 +19,7 @@ with open('create_cal_tables_ddl.txt', 'w') as f:
         f.write(ddl1.format(cal_t) + '\n')
         f.write(ddl2 + '\n')
         for line in open("field.txt"):
-            try:
-                comment, name = filter(lambda x: x, line.strip().split('\t'))
-            except:
-                comment, name = filter(lambda x: x, line.strip().split(' '))
-            print comment, name
+            name, comment = filter(lambda x: x, line.strip().split(' '))
+            # print comment, name
             f.write(ddl3.format(name, comment) + '\n')
         f.write(ddl4 + '\n\n')

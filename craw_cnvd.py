@@ -110,7 +110,7 @@ def parse_url(url):
             # print k, v
             if k == u'CNVD-ID':
                 cnvdid = v
-            if k == u'发布时间':
+            if k == u'公开日期':
                 publishtime = v
             if k == u'危害级别':
                 cvss = tds[i + 1].text.split('(')[0].strip()

@@ -1,7 +1,7 @@
 # coding=utf-8
 import sys
 
-sys.path.append('/data/asap/python_package')
+sys.path.append('/hadoop2/asap/python_package')
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd

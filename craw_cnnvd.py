@@ -154,7 +154,7 @@ def parse_url(url):
 
     try:
         cur.execute(
-            'insert into cnnvd_copy1(cnid, cname, pubtime, uptime, manufacturer, level, type, cveid, source, '
+            'insert into cnnvd(cnid, cname, pubtime, uptime, manufacturer, level, type, cveid, source, '
             'affecttedproduct, brief, patch, ttype, collect_date) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
             item + [today])
         conn.commit()

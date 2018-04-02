@@ -1,7 +1,7 @@
 # coding=utf-8
 import sys
 
-sys.path.append('/data/asap/python_package')
+sys.path.append('/hadoop2/asap/python_package')
 import os
 import pymysql
 from collections import defaultdict
@@ -15,7 +15,7 @@ import pandas as pd
 
 def read_conf():
     cfg = RawConfigParser()
-    cfg.read('settings.conf')
+    cfg.read(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.conf'))
     _keys = ['host', 'user', 'passwd', 'port', 'db']
     _options = {_k: cfg.get('mysql', _k).strip() for _k in _keys}
     cal_table_names = cfg.get('mysql', 'cal_table_names').split(',')
@@ -184,17 +184,18 @@ def get_solr_data(date1, event, cal_table, options):
     # [attack_cnt, Predict] + field_names
     _dict = defaultdict(lambda: [0, ''] + [''] * len(field_names))
     solr = Solr('{0}/solr/{1}_{2}'.format(options['solr_host'], event, date1))
-    results = solr.search('EVENT_CATEGORY:{}'.format(event))
+    results = solr.search('EVENT_TYPE:{}'.format(event))
     for data in results:
         dst_ip = data['DST_IP']
         _dict[dst_ip][0] += 1
 
         for _i, name in enumerate(field_names, 2):
-            _dict[dst_ip][_i] = data[name]
+            if name in data:
+                _dict[dst_ip][_i] = data[name]
 
     values = map(lambda _dip: [date1, _dip] + _dict[_dip], _dict)
 
-    if event == 1006:  # ddos
+    if event == 'ddos_attack':
         values = map(lambda _value: _value[0:2] + [_value[field_names.index('MAX_BYTE_FOLW') + 4]] + _value[3:], values)
 
     conn = pymysql.connect(host=options['host'], user=options['user'], passwd=options['passwd'],
@@ -226,8 +227,7 @@ def update_data(Predictions, table_name, options):
     conn = pymysql.connect(host=options['host'], user=options['user'], passwd=options['passwd'],
                            port=int(options['port']), db=options['db'], charset='utf8')
     cur = conn.cursor()
-    sql = "UPDATE " + table_name + " SET Predict=%s" \
-                                   " WHERE attack_date=%s AND assert_id=%s "
+    sql = "UPDATE " + table_name + " SET Predict=%s WHERE attack_date=%s AND assert_id=%s "
     cur.executemany(sql, Predictions)
     conn.commit()
     cur.close()
@@ -266,6 +266,8 @@ def insert_data(cal_table, warn_table, date1, options):
     cur = conn.cursor()
     cur.execute('select * from {} where DATE(attack_date)={}'.format(cal_table, date1))
     results = cur.fetchall()
+    if not results:
+        return
     if warn_table == 'network_in_early_warn_info':
         _main_names = 'ID,ATTACK_TIME,ATTACK_TYPE,EVENT_TYPE'
         for r in results:
@@ -433,11 +435,16 @@ if __name__ == "__main__":
     options = read_conf()
     today = datetime.now()
     yesterday = (today - timedelta(days=1)).strftime('%Y%m%d')
-    # events = ['password_guess', 'web_attack', 'malicious_scan', 'malicious_program', 'ddos_attack', 'log_crack',
-    #           'system_auth', 'error_log', 'vul_used', 'configure_compliance', 'weak_password']
-    events = [1001, 1002, 1003, 1004, 1006, 2001, 2002, 2003, 3001, 3002, 3003]
+    yesterday = today
+    # events = ['1001', '1002', '1003', '1004', '1006', '2001', '2002', '2003', '3001', '3002', '3003']
+    events = ['password_guessing_attack', 'web_attack', 'malicious_scan_attack', 'malicious_program_attack',
+              'ddos_attack', 'log_damage_detection', 'system_privilege_detection',
+              'error_log_detection', 'host_login', 'vuln_used', 'conf_compliance_used', 'weak_pwd_used']
     for _event, _cal_table in zip(events, options['cal_table_names']):
-        get_solr_data(yesterday, _event, _cal_table, options)
+        try:
+            get_solr_data(yesterday, _event, _cal_table, options)
+        except:
+            continue
 
     delete_data(options)
 
