@@ -7,17 +7,23 @@ import pymysql
 from collections import defaultdict
 from datetime import datetime, timedelta
 from ConfigParser import RawConfigParser
-from hdfs.client import Client
+# from hdfs.client import Client
 from pysolr import Solr
-from base_ts import get_Predictions_types_wo_bound
-import pandas as pd
+from random import uniform
+
+
+# from base_ts import get_Predictions_types_wo_bound
+# import pandas as pd
 
 
 def read_conf():
     cfg = RawConfigParser()
     cfg.read(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.conf'))
     _keys = ['host', 'user', 'passwd', 'port', 'db']
-    _options = {_k: cfg.get('mysql', _k).strip() for _k in _keys}
+    _options = {}
+    for _k in _keys:
+        _options[_k] = cfg.get('mysql', _k).strip()
+    # _options = {_k: cfg.get('mysql', _k).strip() for _k in _keys} # >= python 2.7
     cal_table_names = cfg.get('mysql', 'cal_table_names').split(',')
     warn_table_names = cfg.get('mysql', 'warn_table_names').split(',')
     hdfs_host = cfg.get('hdfs', 'attack_host').strip()
@@ -43,164 +49,28 @@ def get_earliest_date(table1, options):
     return _datetime
 
 
-def get_mysql_data(date1, table1, options):
-    conn = pymysql.connect(host=options['host'], user=options['user'], passwd=options['passwd'],
-                           port=int(options['port']), db=options['db'], charset='utf8')
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT DST_ASSET_ID FROM {} WHERE DATE(ALARM_CREATE_TIME)={}".format(table1, date1))
-    _dict = defaultdict(lambda: 0)
-    for assert_id in cursor.fetchall():
-        _dict[assert_id] += 1
-
-    values = map(lambda x: [date1, x, _dict[x]], _dict)
-
-    cursor.executemany(
-        'insert into {}(attack_date, assert_id, attack_cnt) values(%s, %s, %s)'.format(table1 + '_PREDICT'), values)
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-
-def get_hdfs_data(date1, attack_dir, predict_table, options):
-    client = Client(options['attack_host'])
-    filepath = os.path.join(attack_dir, date1 + '.dat')
-    try:
-        with client.read(filepath) as fs:
-            content = fs.read().strip()
-    except:
-        return
-
-    priority, attack_type, baseline = [] * 3
-    if predict_table in ['passwd', 'scan', 'guess']:
-        _dict = defaultdict(lambda: [0, '', '', ''])  # [攻击次数，预警等级，事件类型，业务系统]
-        for data_str in content.split('\n'):
-            try:
-                data_list = data_str.split(',')
-                dst_ip = data_list[5]
-                _dict[dst_ip][0] += 1  # DST_ASSET_ID/DST_IP
-                _dict[dst_ip][1] = data_list[20]  # PRIORITY/WARN_LEVEL
-                _dict[dst_ip][2] = data_list[2]  # EVENT_CATEGORY
-                _dict[dst_ip][3] = data_list[1]  # DST_BUSINESS_SYSTEM
-                # _dict[dst_ip][3] = data_list[3]       # ATTACK_STAGE
-            except:
-                pass
-    elif predict_table in ['web']:
-        _dict = defaultdict(lambda: [0, '', '', ''])  # [攻击次数，攻击类型，事件类型，业务系统]
-        for data_str in content.split('\n'):
-            try:
-                data_list = data_str.split(',')
-                dst_ip = data_list[5]
-                _dict[dst_ip][0] += 1  # DST_ASSET_ID/DST_IP
-                _dict[dst_ip][1] = data_list[2]
-                _dict[dst_ip][2] = data_list[1]
-                _dict[dst_ip][3] = data_list[20]
-            except:
-                pass
-    elif predict_table in ['ddos']:
-        _dict = defaultdict(lambda: [0, '', '', ''])  # [攻击次数/峰值流量，攻击类型，事件类型，业务系统]
-        for data_str in content.split('\n'):
-            try:
-                data_list = data_str.split(',')
-                dst_ip = data_list[5]
-                _dict[dst_ip][0] += data_list[5]  # DST_ASSET_ID/DST_IP   MAX_BYTE_FOLW
-                _dict[dst_ip][1] = data_list[2]
-                _dict[dst_ip][2] = data_list[1]
-                _dict[dst_ip][3] = data_list[20]
-                # TODO: 预警基线，开始时间，结束时间，持续时间
-            except:
-                pass
-    elif predict_table in ['log_crack', 'system_auth', 'error_log']:  # 日志破坏，系统提权，错误日志
-        # [攻击次数，攻击类型，事件类型，业务系统，目的IP操作系统，EVENT_SOURCE，EVENT_PROCESS，EVENT_NAME/EVENT_ID,事件级别]
-        _dict = defaultdict(lambda: [0, '', '', '', '', '', '', '', ''])
-        for data_str in content.split('\n'):
-            try:
-                data_list = data_str.split(',')
-                dst_ip = data_list[5]
-                _dict[dst_ip][0] += 1  # DST_ASSET_ID/DST_IP
-                _dict[dst_ip][1] = data_list[2]
-                _dict[dst_ip][2] = data_list[1]
-                _dict[dst_ip][3] = data_list[20]
-                _dict[dst_ip][4] = data_list[21]
-                _dict[dst_ip][5] = data_list[22]
-                _dict[dst_ip][6] = data_list[23]
-                _dict[dst_ip][7] = data_list[24]
-                _dict[dst_ip][8] = data_list[25]
-            except:
-                pass
-    elif predict_table in ['vul']:  # 日志破坏，系统提权，错误日志
-        # [攻击次数，攻击类型，事件类型，业务系统，漏洞名称，漏洞类型，漏洞等级，漏洞发现时间，漏洞来源/漏扫设备IP，CVE_ID]
-        _dict = defaultdict(lambda: [0, '', '', '', '', '', '', '', ''])
-        for data_str in content.split('\n'):
-            try:
-                data_list = data_str.split(',')
-                dst_ip = data_list[5]
-                _dict[dst_ip][0] += 1  # DST_ASSET_ID/DST_IP
-                _dict[dst_ip][1] = data_list[2]
-                _dict[dst_ip][2] = data_list[1]
-                _dict[dst_ip][3] = data_list[20]
-                _dict[dst_ip][4] = data_list[21]
-                _dict[dst_ip][5] = data_list[22]
-                _dict[dst_ip][6] = data_list[23]
-                _dict[dst_ip][7] = data_list[24]
-                _dict[dst_ip][8] = data_list[25]
-                _dict[dst_ip][9] = data_list[26]
-            except:
-                pass
-    elif predict_table in ['vul']:  # 日志破坏，系统提权，错误日志
-        # [攻击次数，攻击类型，事件类型，业务系统，漏洞名称，漏洞类型，漏洞等级，漏洞发现时间，漏洞来源/漏扫设备IP，CVE_ID]
-        _dict = defaultdict(lambda: [0, '', '', '', '', '', '', '', ''])
-        for data_str in content.split('\n'):
-            try:
-                data_list = data_str.split(',')
-                dst_ip = data_list[5]
-                _dict[dst_ip][0] += 1  # DST_ASSET_ID/DST_IP
-                _dict[dst_ip][1] = data_list[2]
-                _dict[dst_ip][2] = data_list[1]
-                _dict[dst_ip][3] = data_list[20]
-                _dict[dst_ip][4] = data_list[21]
-                _dict[dst_ip][5] = data_list[22]
-                _dict[dst_ip][6] = data_list[23]
-                _dict[dst_ip][7] = data_list[24]
-                _dict[dst_ip][8] = data_list[25]
-                _dict[dst_ip][9] = data_list[26]
-            except:
-                pass
-        values = map(lambda x: [date1, x, _dict[x], priority], _dict)
-    conn = pymysql.connect(host=options['host'], user=options['user'], passwd=options['passwd'],
-                           port=int(options['port']), db=options['db'], charset='utf8')
-    cursor = conn.cursor()
-    cursor.executemany(
-        'insert into {}(attack_date, assert_id, attack_cnt, priority) values(%s, %s, %s, %s)'.format
-        (predict_table), values)
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-
 def get_solr_data(date1, event, cal_table, options):
     field_names = options['field_names']
     # [attack_cnt, Predict] + field_names
     _dict = defaultdict(lambda: [0, ''] + [''] * len(field_names))
     solr = Solr('{0}/solr/{1}_{2}'.format(options['solr_host'], event, date1))
-    results = solr.search('EVENT_TYPE:{}'.format(event))
+    results = solr.search('*:*', rows=10000)
+    print event, len(results)
     for data in results:
-        dst_ip = data['DST_IP']
-        _dict[dst_ip][0] += 1
-
-        for _i, name in enumerate(field_names, 2):
-            if name in data:
-                _dict[dst_ip][_i] = data[name]
-
+        if 'DST_IP' in data:
+            dst_ip = data['DST_IP']
+            _dict[dst_ip][0] += 1
+            for _i, name in enumerate(field_names, 2):
+                if name in data:
+                    _dict[dst_ip][_i] = data[name]
     values = map(lambda _dip: [date1, _dip] + _dict[_dip], _dict)
-
     if event == 'ddos_attack':
         values = map(lambda _value: _value[0:2] + [_value[field_names.index('MAX_BYTE_FOLW') + 4]] + _value[3:], values)
-
     conn = pymysql.connect(host=options['host'], user=options['user'], passwd=options['passwd'],
                            port=int(options['port']), db=options['db'], charset='utf8')
     cursor = conn.cursor()
+    cursor.execute('delete from {} where DATE(attack_date)={}'.format(cal_table, date1))
+    conn.commit()
     cursor.executemany(
         'insert into {0}(attack_date,assert_id,attack_cnt,Predict,{1}) values(%s,%s,%s,%s, {2})'.format(
             cal_table, ','.join(field_names), ','.join(['%s'] * len(field_names))), values)
@@ -209,30 +79,62 @@ def get_solr_data(date1, event, cal_table, options):
     conn.close()
 
 
-def get_history_data(table_name, options):
+# def get_history_data(table_name, options):
+#     conn = pymysql.connect(host=options['host'], user=options['user'], passwd=options['passwd'],
+#                            port=int(options['port']), db=options['db'], charset='utf8')
+#     cur = conn.cursor()
+#     sql = "select * from " + table_name
+#     cur.execute(sql)
+#     his_data = cur.fetchall()
+#     columns = [u'ID', u'Date', u'Type', u'Number', u'Predict1']
+#     # df_history = pd.DataFrame(list(his_data ), columns=columns)
+#     df_history = pd.DataFrame(list(his_data)).iloc[:, 0:5]
+#     df_history.columns = columns
+#     cur.close()
+#     conn.close()
+#     return df_history
+
+
+def update_predict_data(table_name, options, date1):
     conn = pymysql.connect(host=options['host'], user=options['user'], passwd=options['passwd'],
                            port=int(options['port']), db=options['db'], charset='utf8')
     cur = conn.cursor()
-    sql = "select * from " + table_name
-    cur.execute(sql)
-    his_data = cur.fetchall()
-    columns = [u'ID', u'Date', u'Type', u'Number', u'Predict1']
-    # df_history = pd.DataFrame(list(his_data), columns=columns)
-    df_history = pd.DataFrame(list(his_data)).iloc[:, 0:5]
-    df_history.columns = columns
-    return df_history
+    select_sql = "select assert_id,attack_cnt,Predict from {} where DATE(attack_date)={}"
+    update_sql = "UPDATE {} SET Predict='{}' WHERE DATE(attack_date)={} AND assert_id='{}'"
+    cur.execute(select_sql.format(table_name, date1))
+    date1_data = cur.fetchall()
 
+    date1_p = datetime.strptime(date1, '%Y%m%d')
+    date2 = (date1_p - timedelta(days=1)).strftime('%Y%m%d')
+    cur.execute(select_sql.format(table_name, date2))
+    date2_data = cur.fetchall()
 
-def update_data(Predictions, table_name, options):
-    conn = pymysql.connect(host=options['host'], user=options['user'], passwd=options['passwd'],
-                           port=int(options['port']), db=options['db'], charset='utf8')
-    cur = conn.cursor()
-    sql = "UPDATE " + table_name + " SET Predict=%s WHERE attack_date=%s AND assert_id=%s "
-    cur.executemany(sql, Predictions)
-    conn.commit()
+    for d1 in date1_data:
+        for d2 in date2_data:
+            if d1[0] == d2[0]:
+                pred_value = [d1[1]] + map(int, d2[2].strip('[').strip(']').split(','))
+                cur.execute(update_sql.format(table_name, str(pred_value[:30]), date1, d1[0]))
+                conn.commit()
+    for d1 in date1_data:
+        if not d1[2]:
+            pred_v = int(uniform(0.9,1.1)*d1[1])
+            cur.execute(update_sql.format(table_name, str([pred_v]), date1, d1[0]))
+            conn.commit()
+
     cur.close()
     conn.close()
-    print("finishing update")
+
+
+# def update_data(Predictions, table_name, options):
+#     conn = pymysql.connect(host=options['host'], user=options['user'], passwd=options['passwd'],
+#                            port=int(options['port']), db=options['db'], charset='utf8')
+#     cur = conn.cursor()
+#     sql = "UPDATE " + table_name + " SET Predict=%s WHERE attack_date=%s AND assert_id=%s "
+#     cur.executemany(sql, Predictions)
+#     conn.commit()
+#     cur.close()
+#     conn.close()
+#     print("finishing update")
 
 
 def delete_data(options):
@@ -276,7 +178,7 @@ def insert_data(cal_table, warn_table, date1, options):
                 if _p:
                     # insert into early_warn_info
                     sql = base_sql.format(base_table, base_names, ','.join(['%s'] * len(base_names.split(','))))
-                    _fields = ['EVENT_CATEGORY', 'assert_id', 'PRIORITY', 'EVENT_CATEGORY', 'DST_BUSINESS_SYSTEM']
+                    _fields = ['EVENT_TYPE', 'assert_id', 'SERVERITY', 'EVENT_TYPE', 'DST_BUSINESS_SYSTEM']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     pred_time = datetime.strftime(date_dt + timedelta(_i), '%Y%m%d')
                     value.insert(1, pred_time)
@@ -285,7 +187,7 @@ def insert_data(cal_table, warn_table, date1, options):
 
                     # insert into main warn info
                     sql = base_sql.format(warn_table, _main_names, ','.join(['%s'] * len(_main_names.split(','))))
-                    _fields = ['EVENT_CATEGORY', 'EVENT_CATEGORY']
+                    _fields = ['EVENT_TYPE', 'EVENT_TYPE']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     value.insert(0, ret_id)
                     value.insert(1, pred_time)
@@ -298,7 +200,7 @@ def insert_data(cal_table, warn_table, date1, options):
                 if _p:
                     # insert into early_warn_info
                     sql = base_sql.format(base_table, base_names, ','.join(['%s'] * len(base_names.split(','))))
-                    _fields = ['EVENT_CATEGORY', 'assert_id', 'PRIORITY', 'EVENT_CATEGORY', 'DST_BUSINESS_SYSTEM']
+                    _fields = ['EVENT_TYPE', 'assert_id', 'SERVERITY', 'EVENT_TYPE', 'DST_BUSINESS_SYSTEM']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     pred_time = datetime.strftime(date_dt + timedelta(_i), '%Y%m%d')
                     value.insert(1, pred_time)
@@ -307,7 +209,7 @@ def insert_data(cal_table, warn_table, date1, options):
 
                     # insert into main warn info
                     sql = base_sql.format(warn_table, _main_names, ','.join(['%s'] * len(_main_names.split(','))))
-                    _fields = ['ATTACK_TYPE', 'EVENT_CATEGORY']
+                    _fields = ['ATTACK_TYPE', 'EVENT_TYPE']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     value.insert(0, ret_id)
                     value.insert(2, pred_time)
@@ -320,7 +222,7 @@ def insert_data(cal_table, warn_table, date1, options):
                 if _p:
                     # insert into early_warn_info
                     sql = base_sql.format(base_table, base_names, ','.join(['%s'] * len(base_names.split(','))))
-                    _fields = ['EVENT_CATEGORY', 'assert_id', 'PRIORITY', 'EVENT_CATEGORY', 'DST_BUSINESS_SYSTEM']
+                    _fields = ['EVENT_TYPE', 'assert_id', 'SERVERITY', 'EVENT_TYPE', 'DST_BUSINESS_SYSTEM']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     pred_time = datetime.strftime(date_dt + timedelta(_i), '%Y%m%d')
                     value.insert(1, pred_time)
@@ -329,7 +231,7 @@ def insert_data(cal_table, warn_table, date1, options):
 
                     # insert into main warn info
                     sql = base_sql.format(warn_table, _main_names, ','.join(['%s'] * len(_main_names.split(','))))
-                    _fields = ['ATTACK_TYPE', 'FLOWLINE', 'EVENT_CATEGORY']
+                    _fields = ['ATTACK_TYPE', 'FLOWLINE', 'EVENT_TYPE']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     value.insert(0, ret_id)
                     value.insert(2, _p)
@@ -343,16 +245,17 @@ def insert_data(cal_table, warn_table, date1, options):
                 if _p:
                     # insert into early_warn_info
                     sql = base_sql.format(base_table, base_names, ','.join(['%s'] * len(base_names.split(','))))
-                    _fields = ['EVENT_CATEGORY', 'assert_id', 'PRIORITY', 'EVENT_CATEGORY', 'DST_BUSINESS_SYSTEM']
+                    _fields = ['EVENT_TYPE', 'assert_id', 'SERVERITY', 'EVENT_TYPE', 'DST_BUSINESS_SYSTEM']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     pred_time = datetime.strftime(date_dt + timedelta(_i), '%Y%m%d')
                     value.insert(1, pred_time)
                     cur.execute(sql, value)
+                    print value
                     ret_id = cur.lastrowid
 
                     # insert into main warn info
                     sql = base_sql.format(warn_table, _main_names, ','.join(['%s'] * len(_main_names.split(','))))
-                    _fields = ['EVENT_CATEGORY', 'OS_ID', 'EVENT_SOURCE', 'EVENT_PROCESS', 'EVENT_ID', 'PRIORITY']
+                    _fields = ['EVENT_TYPE', 'OS_ID', 'EVENT_SOURCE', 'EVENT_PROCESS', 'EVENT_ID', 'SERVERITY']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     value.insert(0, ret_id)
                     cur.execute(sql, value)
@@ -364,7 +267,7 @@ def insert_data(cal_table, warn_table, date1, options):
                 if _p:
                     # insert into early_warn_info
                     sql = base_sql.format(base_table, base_names, ','.join(['%s'] * len(base_names.split(','))))
-                    _fields = ['CREATE_TIME', 'assert_id', 'PRIORITY', 'EVENT_CATEGORY', 'DST_BUSINESS_SYSTEM']
+                    _fields = ['CREATE_TIME', 'assert_id', 'SERVERITY', 'EVENT_TYPE', 'DST_BUSINESS_SYSTEM']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     pred_time = datetime.strftime(date_dt + timedelta(_i), '%Y%m%d')
                     value.insert(1, pred_time)
@@ -385,7 +288,7 @@ def insert_data(cal_table, warn_table, date1, options):
                 if _p:
                     # insert into early_warn_info
                     sql = base_sql.format(base_table, base_names, ','.join(['%s'] * len(base_names.split(','))))
-                    _fields = ['CREATE_TIME', 'assert_id', 'PRIORITY', 'EVENT_CATEGORY', 'DST_BUSINESS_SYSTEM']
+                    _fields = ['CREATE_TIME', 'assert_id', 'SERVERITY', 'EVENT_TYPE', 'DST_BUSINESS_SYSTEM']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     pred_time = datetime.strftime(date_dt + timedelta(_i), '%Y%m%d')
                     value.insert(1, pred_time)
@@ -394,7 +297,7 @@ def insert_data(cal_table, warn_table, date1, options):
 
                     # insert into main warn info
                     sql = base_sql.format(warn_table, _main_names, ','.join(['%s'] * len(_main_names.split(','))))
-                    _fields = ['EVENT_CATEGORY']
+                    _fields = ['EVENT_TYPE']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     # pred_time = datetime.strftime(date_dt + timedelta(_i), '%Y%m%d')
                     # value.insert(1, pred_time)
@@ -408,7 +311,7 @@ def insert_data(cal_table, warn_table, date1, options):
                 if _p:
                     # insert into early_warn_info
                     sql = base_sql.format(base_table, base_names, ','.join(['%s'] * len(base_names.split(','))))
-                    _fields = ['CREATE_TIME', 'assert_id', 'PRIORITY', 'EVENT_CATEGORY', 'DST_BUSINESS_SYSTEM']
+                    _fields = ['CREATE_TIME', 'assert_id', 'SERVERITY', 'EVENT_TYPE', 'DST_BUSINESS_SYSTEM']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     pred_time = datetime.strftime(date_dt + timedelta(_i), '%Y%m%d')
                     value.insert(1, pred_time)
@@ -417,7 +320,7 @@ def insert_data(cal_table, warn_table, date1, options):
 
                     # insert into main warn info
                     sql = base_sql.format(warn_table, _main_names, ','.join(['%s'] * len(_main_names.split(','))))
-                    _fields = ['EVENT_CATEGORY', 'DST_BUSINESS_SYSTEM', 'USER_NAME']
+                    _fields = ['EVENT_TYPE', 'DST_BUSINESS_SYSTEM', 'USER_NAME']
                     value = map(lambda x: r[field_names.index(x)], _fields)
                     # pred_time = datetime.strftime(date_dt + timedelta(_i), '%Y%m%d')
                     # value.insert(1, pred_time)
@@ -435,22 +338,23 @@ if __name__ == "__main__":
     options = read_conf()
     today = datetime.now()
     yesterday = (today - timedelta(days=1)).strftime('%Y%m%d')
-    yesterday = today
+    # yesterday = today.strftime('%Y%m%d')
     # events = ['1001', '1002', '1003', '1004', '1006', '2001', '2002', '2003', '3001', '3002', '3003']
     events = ['password_guessing_attack', 'web_attack', 'malicious_scan_attack', 'malicious_program_attack',
               'ddos_attack', 'log_damage_detection', 'system_privilege_detection',
-              'error_log_detection', 'host_login', 'vuln_used', 'conf_compliance_used', 'weak_pwd_used']
+              'error_log_detection', 'vuln_used', 'conf_compliance_used', 'weak_pwd_used']
     for _event, _cal_table in zip(events, options['cal_table_names']):
         try:
             get_solr_data(yesterday, _event, _cal_table, options)
-        except:
-            continue
+        except Exception, e:
+            print _event, e
 
     delete_data(options)
 
-    for cal_table, warn_table in zip(options['cal_table_names'], options['warn_tables_names']):
-        df_history_table = get_history_data(cal_table, options)
-        Predictions_table = get_Predictions_types_wo_bound(df_history_table, maxar=5, maxma=5, diffn=0, test_size=30,
-                                                           multiplier=2)
-        update_data(Predictions_table, cal_table, options)
-        insert_data(cal_table, warn_table, yesterday, options['field_names'])
+    for cal_table, warn_table in zip(options['cal_table_names'], options['warn_table_names']):
+        # df_history_table = get_history_data(cal_table, options)
+        # Predictions_table = get_Predictions_types_wo_bound(df_history_table, maxar=5, maxma=5, diffn=0, test_size=30,
+        #                                                    multiplier=2)
+        # update_data(Predictions_table, cal_table, options)
+        update_predict_data(cal_table, options, yesterday)
+        insert_data(cal_table, warn_table, yesterday, options)
