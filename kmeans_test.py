@@ -1,7 +1,7 @@
 # coding=utf-8
 import numpy as np
 import matplotlib.pyplot as plt
-%matplotlib inline
+# %matplotlib inline
 from sklearn.datasets.samples_generator import make_blobs
 from sklearn import metrics
 from sklearn.cluster import KMeans
