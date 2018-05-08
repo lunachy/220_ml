@@ -66,13 +66,16 @@ def text_reply(msg):
         print (u"\tReply Message: %s\n" % reply)
         # a or b的意思是，如果a有内容，那么返回a，否则返回b
         # 有内容一般就是指非空或者非None，你可以用`if a: print('True')`来测试
-        time.sleep(1)
-        itchat.send(reply, msg['ToUserName'])
-        return reply or default_reply
+        time.sleep(2)
+        print msg['FromUserName'], msg['ToUserName'], msg['User']['NickName']
+        if msg['User']['NickName'] in [u'MRS静', u'Jessie']:
+            itchat.send(reply, msg['FromUserName'])
+            itchat.send(reply, msg['ToUserName'])
+            # return reply or default_reply
 
 
 # 处理群聊消息
-@itchat.msg_register([TEXT, PICTURE], isGroupChat=True)
+# @itchat.msg_register([TEXT, PICTURE], isGroupChat=True)
 def group_reply(msg):
     global FLAG
     # if msg['isAt']:
@@ -124,6 +127,8 @@ if __name__ == '__main__':
 
     # 获取自己的UserName
     myUserName = itchat.search_friends()['UserName']
-    cr = itchat.search_chatrooms(u'飞起')[0]['UserName']
-    print ('myUserName: %s\nchatroom: %s' % (myUserName, cr))
+    # name = itchat.search_friends(nickName='Jessie')['UserName']
+    # print name
+    # cr = itchat.search_chatrooms(u'飞起')[0]['UserName']
+    # print ('myUserName: %s\nchatroom: %s' % (myUserName, cr))
     itchat.run()

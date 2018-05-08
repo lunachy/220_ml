@@ -11,6 +11,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.linear_model import Lasso, Ridge
+from sklearn.preprocessing import label_binarize
 from bs4 import BeautifulSoup
 import re
 from nltk.corpus import stopwords
