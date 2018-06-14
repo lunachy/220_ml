@@ -1,6 +1,7 @@
 # coding=utf-8
 import os
 import time
+import shutil
 from ConfigParser import RawConfigParser
 from multiprocessing import Process
 
@@ -71,7 +72,7 @@ def api_post_train():
     return '200'
 
 
-@app.route('/predict', methods=['POST'])
+@app.route('/offline_predict', methods=['POST'])
 def api_post_test():
     # curl -H "Content-type: application/json" -X POST http://10.21.37.198:7777/predict -d
     # '{ "data_input_path":"/home/ml/caijr/ml-engine/data/iris.csv", "features":"label,a,b,c,d", "train_id":"1"}'
@@ -107,36 +108,56 @@ def api_post_test():
     return '200'
 
 
-@app.route('/predict', methods=['POST'])
+@app.route('/online_predict', methods=['POST'])
 def api_post_test():
     # curl -H "Content-type: application/json" -X POST http://10.21.37.198:7777/predict -d
     # '{ "data_input_path":"/home/ml/caijr/ml-engine/data/iris.csv", "features":"label,a,b,c,d", "train_id":"1"}'
     assert request.headers['Content-Type'] == 'application/json', 'Post data must be json format!'
     data_json = request.json
 
-    fixed_keys = ['train_id', 'data_input_path', 'features']
+    fixed_keys = ['train_id', 'address', 'topic']
     for _key in fixed_keys:
         if not data_json.has_key(_key):
             return '404, not exists key: ' + _key
 
-    features = data_json['features'].strip().split(',')
-    with open(data_json['data_input_path']) as f:
-        column_str = f.readline().strip()
-
-    for f in features:
-        if column_str.find(f) == -1:
-            return '404, features of train and test do not match.'
-
     kwargs = dict()
-    kwargs['train_id'] = data_json['train_id']
-    kwargs['data_input_path'] = data_json['data_input_path']
+    for _key in fixed_keys:
+        kwargs[_key] = data_json[_key]
 
     print kwargs
-    # p = Process(target=ml_predict, kwargs=kwargs)
-    # p.daemon = True
-    # p.start()
+
     try:
-        ml_predict(**kwargs)
+        ml_online_predict(**kwargs)
+    except Exception as e:
+        print e
+        return '404'
+    return '200'
+
+
+@app.route('/deploy', methods=['POST'])
+def api_post_test():
+    # curl -H "Content-type: application/json" -X POST http://10.21.37.198:7777/predict -d
+    # '{ "data_input_path":"/home/ml/caijr/ml-engine/data/iris.csv", "features":"label,a,b,c,d", "train_id":"1"}'
+    assert request.headers['Content-Type'] == 'application/json', 'Post data must be json format!'
+    data_json = request.json
+
+    fixed_keys = ['train_id', 'src_file', 'dst_file']
+    for _key in fixed_keys:
+        if not data_json.has_key(_key):
+            return '404, not exists key: ' + _key
+
+    try:
+        shutil.copy(data_json['src_file'], data_json['dst_file'])
+
+        conn = pymysql.connect(**options)
+        cur = conn.cursor()
+        table = 'train_instances'
+        sql = "update {} set training_status=3 where train_id='{}'".format(table, data_json['train_id'])
+        cur.execute(sql)
+        conn.commit()
+
+        cur.close()
+        conn.close()
     except Exception as e:
         print e
         return '404'

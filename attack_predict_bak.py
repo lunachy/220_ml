@@ -53,8 +53,8 @@ def get_solr_data(date1, event, cal_table, options):
     field_names = options['field_names']
     # [attack_cnt, Predict] + field_names
     _dict = defaultdict(lambda: [0, ''] + [''] * len(field_names))
-    solr = Solr('{0}/solr/analytical_data_{1}'.format(options['solr_host'], date1))  # analytical_data_20180508
-    results = solr.search('EVENT_TYPE:{}'.format(event), rows=10000)
+    solr = Solr('{0}/solr/{1}_{2}'.format(options['solr_host'], event, date1))
+    results = solr.search('*:*', rows=10000)
     print event, len(results)
     for data in results:
         if 'DST_IP' in data:
@@ -339,10 +339,10 @@ if __name__ == "__main__":
     today = datetime.now()
     yesterday = (today - timedelta(days=1)).strftime('%Y%m%d')
     # yesterday = today.strftime('%Y%m%d')
-    events = ['1001', '1002', '1003', '1004', '1006', '2001', '2002', '2003', '3001', '3002', '3003']
-    # events = ['password_guessing_attack', 'web_attack', 'malicious_scan_attack', 'malicious_program_attack',
-    #           'ddos_attack', 'log_damage_detection', 'system_privilege_detection',
-    #           'error_log_detection', 'vuln_used', 'conf_compliance_used', 'weak_pwd_used']
+    # events = ['1001', '1002', '1003', '1004', '1006', '2001', '2002', '2003', '3001', '3002', '3003']
+    events = ['password_guessing_attack', 'web_attack', 'malicious_scan_attack', 'malicious_program_attack',
+              'ddos_attack', 'log_damage_detection', 'system_privilege_detection',
+              'error_log_detection', 'vuln_used', 'conf_compliance_used', 'weak_pwd_used']
     for _event, _cal_table in zip(events, options['cal_table_names']):
         try:
             get_solr_data(yesterday, _event, _cal_table, options)
