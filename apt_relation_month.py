@@ -1,5 +1,7 @@
 # coding=utf-8
 import sys
+
+sys.path.append('/home/asap/ssa/python_package')
 from datetime import datetime, timedelta
 from time import sleep
 from collections import defaultdict
@@ -15,9 +17,9 @@ def cal_attacks(ip_addr):
     this_month = yesterday[:-2]
     _date1 = yesterday[:4] + '-' + yesterday[4:6] + '-' + yesterday[6:]
     _date2 = the_day_before_yesterday[:4] + '-' + the_day_before_yesterday[4:6] + '-' + the_day_before_yesterday[6:]
-    tda_solr = Solr('{0}/solr/tda_{1}'.format(ip_addr, this_month))
-    waf_solr = Solr('{0}/solr/waf_{1}'.format(ip_addr, this_month))
-    ids_solr = Solr('{0}/solr/ids_{1}'.format(ip_addr, this_month))
+    tda_solr = Solr('{0}/solr/ts_tda_{1}'.format(ip_addr, this_month))
+    waf_solr = Solr('{0}/solr/ts_waf_{1}'.format(ip_addr, this_month))
+    ids_solr = Solr('{0}/solr/ts_ids_{1}'.format(ip_addr, this_month))
 
     q = 'collectTime:[{}T16:00:00Z TO {}T15:59:59Z]'.format(_date2, _date1)
     try:
@@ -58,7 +60,8 @@ def cal_attacks(ip_addr):
     values = zip([yesterday] * 11, [str(i) for i in range(11)],
                  [threat_types[str(i)] for i in range(7)] + [all_attacks, waf_attacks, tda_attacks, ids_attacks])
 
-    conn = pymysql.connect(host='10.15.42.21', port=3306, user='root', passwd='root', db='traffic')
+    conn = pymysql.connect(host='10.32.221.202', port=3306, user='asap', passwd='1qazXSW@3edc', db='siap',
+                           charset='UTF8')
     cur = conn.cursor()
     cur.executemany('insert into predict(ThreatDate, ThreatType, ThreatNumber) values(%s, %s, %s)', values)
     conn.commit()
@@ -197,7 +200,7 @@ def apt_relate(tda_solr):
 
 if __name__ == '__main__':
     # ip_addr = 'http://10.15.42.19:8181'
-    ip_addr = 'http://10.21.17.207:8181'
+    ip_addr = 'http://10.32.222.186:8983'
     time_now = datetime.now()
     today = datetime.now().strftime('%Y%m%d')
     # tda_solr = Solr('{0}/solr/tda_{1}'.format(ip_addr, today))
@@ -211,9 +214,9 @@ if __name__ == '__main__':
             today = time_now.strftime('%Y%m%d')
             yesterday = (time_now - timedelta(days=1)).strftime('%Y%m%d')
             the_day_before_yesterday = (time_now - timedelta(days=2)).strftime('%Y%m%d')
-            if time_now.hour == 3:
+            if time_now.hour == 1:
                 cal_attacks(ip_addr)
-            tda_solr = Solr('{0}/solr/tda_{1}'.format(ip_addr, today[:-2]))
+            tda_solr = Solr('{0}/solr/ts_tda_{1}'.format(ip_addr, today[:-2]))
             apt_relate(tda_solr)
             sleep(1 * 60 * 60)
         except Exception as e:
