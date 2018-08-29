@@ -6,8 +6,8 @@
 // 1885   7   8   9
 // 2100       0
 const handimg = images.read('/sdcard/脚本/take.png');
-//const gimg = images.read('/sdcard/脚本/g.jpg');
-var [W, H] = [device.width, device.height];
+const gimg = images.read('/sdcard/脚本/g.jpg');
+let [W, H] = [device.width, device.height];
 
 const alipayHome = className("android.widget.TextView").text("首页");
 const antIcon = className("android.widget.TextView").text("蚂蚁森林");
@@ -26,14 +26,14 @@ function click_widget(widget) {
 }
 
 const timeout = 1000;
-var max_retry_times = 5;
+let max_retry_times = 5;
 images.requestScreenCapture();
 
 function enter_ant_forest() {
     max_retry_times = 5;
     launch(alipay_package); //启动支付宝
     sleep(timeout);
-    var home = alipayHome.findOne(timeout);
+    let home = alipayHome.findOne(timeout);
     while (!home && max_retry_times) {
         log("进入支付宝首页失败，可能在支付宝别的界面，按返回键直到首页");
         back();
@@ -45,43 +45,39 @@ function enter_ant_forest() {
         log("进入支付宝首页成功");
     } else {
         log("进入支付宝首页失败");
-        var time = new Date();
+        let time = new Date();
         images.captureScreen('/sdcard/脚本/' + time.getMinutes() + '_' + time.getSeconds() + '.jpg');
         return false;
     }
 
-    click_widget(home);
-    max_retry_times = 3;
-    var ant_forest = antIcon.findOne(timeout);
-    while (!ant_forest && max_retry_times) {
+    let ant_forest = antIcon.findOne(timeout);
+    if (!ant_forest) {
         click_widget(home);
-        max_retry_times -= 1;
-        sleep(timeout);
-        ant_forest = antIcon.findOne(timeout);
-    }
-    if (max_retry_times) {
-        log("进入支付宝首页成功1");
-    } else {
-        log("进入支付宝首页失败1");
-        var time = new Date();
-        images.captureScreen('/sdcard/脚本/' + time.getMinutes() + '_' + time.getSeconds() + '.jpg');
-        return false;
+        click(100, 2180);   //首页坐标，防止点击控件失败，重复点击，不影响
     }
 
+    ant_forest = antIcon.findOne(timeout);
     click_widget(ant_forest);
-    max_retry_times = 3;
-    var hz = hezhong.findOne(timeout);
-    while (!hz && max_retry_times) {
-        click_widget(ant_forest);
-        max_retry_times -= 1;
-        sleep(timeout * 10);
-        hz = hezhong.findOne(timeout);
+    sleep(timeout * 5);
+    let hz = hezhong.findOne(timeout);
+    if (!hz) {
+        sleep(timeout * 20);
     }
-    if (max_retry_times) {
+    ant_forest = antIcon.findOne(timeout);
+    if (!hz && ant_forest) {
+        click(945, 530);    //蚂蚁森林坐标，防止点击控件失败
+        sleep(timeout * 5);
+    }
+    hz = hezhong.findOne(timeout);
+    if (!hz) {
+        sleep(timeout * 20);
+    }
+    hz = hezhong.findOne(timeout);
+    if (hz) {
         log("进入蚂蚁森林成功");
     } else {
         log("进入支蚂蚁森林失败");
-        var time = new Date();
+        let time = new Date();
         images.captureScreen('/sdcard/脚本/' + time.getMinutes() + '_' + time.getSeconds() + '.jpg');
         return false;
     }
@@ -91,9 +87,9 @@ function enter_ant_forest() {
 
 
 function unique(arr) {
-    var hash = {};
-    var result = [];
-    for (var i = 0, len = arr.length; i < len; i++) {
+    let hash = {};
+    let result = [];
+    for (let i = 0, len = arr.length; i < len; i++) {
         if (!hash[arr[i]]) {
             result.push(arr[i]);
             hash[arr[i]] = true;
@@ -102,44 +98,29 @@ function unique(arr) {
     return result
 }
 
-
 function get_my_energy() {
     log("get_my_energy");
-    hezhong.waitFor();
-    var points = className("android.widget.Button").filter(function (o) {
-        var desc = o.contentDescription;
-        return (null !== desc.match(/^收集能量|^$/));
-    }).find().map(e => [e.bounds().centerX(), e.bounds().centerY()]);
-    if (points.length){
-        sleep(timeout * 8);
-        points.map(e => click(e[0], e[1]));
+    let gSpace = images.findImage(images.captureScreen(), gimg, {region: [50, 350, 950, 450]});
+    while (gSpace) {
+        click(gSpace.x, gSpace.y);
+        sleep(timeout);
+        gSpace = images.findImage(images.captureScreen(), gimg, {region: [50, 350, 950, 450]});
     }
-    sleep(timeout);
-    hezhong.waitFor();
-}
 
-function findHand() {
-    try {
-        return images.findImage(images.captureScreen(), handimg, {
-            region: [1000, 200]
-        })
-    } catch (err) {
-        log(err);
-        return null;
-    }
+    sleep(timeout);
 }
 
 function get_energy() {
-    var handSpace = findHand();
+    let handSpace = images.findImage(images.captureScreen(), handimg, {region: [1000, 200]});
     while (handSpace) {
         //log(W / 2, handSpace.y + 20)
         sleep(timeout);
         click(W / 2, handSpace.y + 20);// 可能按不进去
         sleep(2000);
         if (inforest.findOne(timeout)) {  //可能缓冲很久
-            var selectors = canget.find();
+            let selectors = canget.find();
             if (!selectors.empty()) {
-                var points = selectors.map(e => [e.bounds().centerX(), e.bounds().centerY() - 100]);
+                let points = selectors.map(e => [e.bounds().centerX(), e.bounds().centerY() - 100]);
                 // log(unique(points))
                 unique(points).map(e => click(e[0], e[1]));
                 sleep(timeout)
@@ -147,13 +128,13 @@ function get_energy() {
             back();
             sleep(1000)
         }
-        handSpace = findHand();
+        handSpace = images.findImage(images.captureScreen(), handimg, {region: [1000, 200]});
     }
 }
 
 function get_friends_energy() {
     moreFriend.waitFor();
-    var mf = moreFriend.findOne(timeout);
+    let mf = moreFriend.findOne(timeout);
     mf.click();
     sleep(3000);
     friendRank.waitFor();
@@ -173,13 +154,13 @@ function get_friends_energy() {
 
 function unlock_screen() {
     max_retry_times = 3;
-    var screen_on = device.isScreenOn();
+    let screen_on = device.isScreenOn();
     while (!screen_on && max_retry_times) {
         device.wakeUp();
         sleep(timeout);
         swipe(100, 1900, 100, 400, 100);
         sleep(timeout);
-        var pass = [[540, 1675], [220, 1455], [860, 1675], [860, 1455], [220, 1455], [540, 2100]];
+        let pass = [[540, 1675], [220, 1455], [860, 1675], [860, 1455], [220, 1455], [540, 2100]];
         pass.map(e => click(e[0], e[1]));
 
         sleep(timeout * 12);
@@ -191,7 +172,7 @@ function unlock_screen() {
         log("解锁成功");
     } else {
         log("解锁失败");
-        var time = new Date();
+        let time = new Date();
         images.captureScreen('/sdcard/脚本/' + time.getMinutes() + '_' + time.getSeconds() + '.jpg');
         return false;
     }
@@ -199,12 +180,15 @@ function unlock_screen() {
 }
 
 if (unlock_screen()) {
-    var is_forest = enter_ant_forest();
-    while (is_forest) {
+    let is_forest = enter_ant_forest();
+    if (is_forest) {
         get_my_energy();
+    }
+
+    while (is_forest) {
         get_friends_energy();
- 
-        var time = new Date();
+
+        let time = new Date();
         if (time.getHours() > 7) {
             break
         }
