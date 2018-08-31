@@ -31,6 +31,8 @@ images.requestScreenCapture();
 
 function enter_ant_forest() {
     max_retry_times = 5;
+    click(680, 1080);
+    sleep(timeout);
     launch(alipay_package); //启动支付宝
     sleep(timeout);
     let home = alipayHome.findOne(timeout);
@@ -100,14 +102,13 @@ function unique(arr) {
 
 function get_my_energy() {
     log("get_my_energy");
-    let gSpace = images.findImage(images.captureScreen(), gimg, {region: [50, 350, 950, 450]});
-    while (gSpace) {
-        click(gSpace.x, gSpace.y);
-        sleep(timeout);
-        gSpace = images.findImage(images.captureScreen(), gimg, {region: [50, 350, 950, 450]});
+    let selectors = myEnergyCat.find();
+    if (!selectors.empty()) {
+        let points = selectors.map(e => [e.bounds().centerX(), e.bounds().centerY() - 60]);
+        // log(unique(points))
+        unique(points).map(e => click(e[0], e[1]));
+        sleep(timeout)
     }
-
-    sleep(timeout);
 }
 
 function get_energy() {
@@ -120,7 +121,7 @@ function get_energy() {
         if (inforest.findOne(timeout)) {  //可能缓冲很久
             let selectors = canget.find();
             if (!selectors.empty()) {
-                let points = selectors.map(e => [e.bounds().centerX(), e.bounds().centerY() - 100]);
+                let points = selectors.map(e => [e.bounds().centerX(), e.bounds().centerY() - 60]);
                 // log(unique(points))
                 unique(points).map(e => click(e[0], e[1]));
                 sleep(timeout)
@@ -170,6 +171,7 @@ function unlock_screen() {
 
     if (max_retry_times) {
         log("解锁成功");
+        images.captureScreen('/sdcard/脚本/解锁后截图.jpg');
     } else {
         log("解锁失败");
         let time = new Date();
@@ -181,11 +183,8 @@ function unlock_screen() {
 
 if (unlock_screen()) {
     let is_forest = enter_ant_forest();
-    if (is_forest) {
-        get_my_energy();
-    }
-
     while (is_forest) {
+        get_my_energy();
         get_friends_energy();
 
         let time = new Date();
