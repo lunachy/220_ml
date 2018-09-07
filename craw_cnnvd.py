@@ -141,7 +141,9 @@ def parse_url(url):
         if apsa:
             affecttedproduct = '\r\n'.join(map(lambda ap: ap.text.strip(), apsa))
 
-        item = [cnid, cname, pubtime, uptime, manufacturer, level, type, cveid, source, affecttedproduct, brief, patch,
+        # item = [cnid, cname, pubtime, uptime, manufacturer, level, type, cveid, source, affecttedproduct, brief, patch,
+        #         ttype]
+        item = [cnid, cname, pubtime, level, type, cveid, source, affecttedproduct, brief, patch,
                 ttype]
     except Exception, e:
         to_page(url, failed_url_file)
@@ -153,9 +155,13 @@ def parse_url(url):
     cur = conn.cursor()
 
     try:
+        # cur.execute(
+        #     'insert into cnnvd(cnid, cname, pubtime, uptime, manufacturer, level, type, cveid, source, '
+        #     'affecttedproduct, brief, patch, ttype, collect_date) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+        #     item + [today])
         cur.execute(
-            'insert into cnnvd(cnid, cname, pubtime, uptime, manufacturer, level, type, cveid, source, '
-            'affecttedproduct, brief, patch, ttype, collect_date) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+            'insert into cnnvd(cnnvd_id, title, publish_time, level, type, cveid, source, '
+            'affected_product, description, patch, ttype, collect_date) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
             item + [today])
         conn.commit()
     except Exception, e:

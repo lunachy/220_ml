@@ -1,39 +1,24 @@
-#!/usr/bin/python
-# coding=utf-8
-__author = 'chy'
+from sklearn.linear_model import LinearRegression
+import numpy as np
 
-import os
-import sys
-import time
-import signal
-import logging.handlers
-from ConfigParser import RawConfigParser
-import pymysql
-from multiprocessing import Pool, cpu_count
-import requests
-from random import choice
-import traceback
-import argparse
+np.random.seed(0)
+size = 5000
 
+#A dataset with 3 features
+X = np.random.normal(0, 1, (size, 3))
+#Y = X0 + 2*X1 + noise
+Y = X[:,0] + 2*X[:,1] + np.random.normal(0, 2, size)
+lr = LinearRegression()
+lr.fit(X, Y)
 
-def read_conf(conf_path):
-    cfg = RawConfigParser()
-    cfg.read(conf_path)
-    _keys = ['host', 'user', 'passwd', 'port', 'db', 'charset']
-    _options = {}
-    for _k in _keys:
-        _options[_k] = cfg.get('mysql', _k).strip()
-    _options['port'] = int(_options['port'])
-    return _options
+#A helper method for pretty-printing linear models
+def pretty_print_linear(coefs, names = None, sort = False):
+    if names == None:
+        names = ["X%s" % x for x in range(len(coefs))]
+    lst = zip(coefs, names)
+    if sort:
+        lst = sorted(lst,  key = lambda x: -np.abs(x[0]))
+    return " + ".join("%s * %s" % (round(coef, 3), name)
+                                   for coef, name in lst)
 
-
-def mv_tb():
-    conn = pymysql.connect(**options)
-    cur = conn.cursor()
-    sql = 'select md5 from {} where flag is Null LIMIT 2'.format(tb_file)
-    cur.execute(sql)
-    cur.close()
-    conn.close()
-
-if __name__ == '__main__':
-    options = read_conf(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings_test.conf'))
+print "Linear model:", pretty_print_linear(lr.coef_)

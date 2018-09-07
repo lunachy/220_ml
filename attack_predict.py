@@ -79,6 +79,37 @@ def get_solr_data(date1, event, cal_table, options):
     conn.close()
 
 
+def get_vul_from_mysql(date1, vul_table, cal_table, options):
+    field_names = options['field_names']
+    # [attack_cnt, Predict] + field_names
+    _dict = defaultdict(lambda: [0, ''] + [''] * len(field_names))
+    conn = pymysql.connect(host=options['host'], user=options['user'], passwd=options['passwd'],
+                           port=int(options['port']), db=options['db'], charset='utf8')
+    cursor = conn.cursor()
+    cursor.execute(
+        'select EQU_IP, VULN_NAME, `TYPE`, SEVERITY, CVE_ID, CREATE_TIME from {} where DATE(CREATE_TIME)={};'.format(
+            vul_table, date1))
+    results = cursor.fetchall()
+    for data in results:
+        dst_ip = data[0]
+        _dict[dst_ip][0] += 1
+        _dict[dst_ip][field_names.index('VLUN_NAME')] = data[1]
+        _dict[dst_ip][field_names.index('VLUN_TYPE')] = data[2]
+        _dict[dst_ip][field_names.index('VLUN_LEVEL')] = data[3]
+        _dict[dst_ip][field_names.index('CVE_ID')] = data[4]
+        _dict[dst_ip][field_names.index('CREATE_TIME')] = data[5]
+
+        values = map(lambda _dip: [date1, _dip] + _dict[_dip], _dict)
+        cursor.execute('delete from {} where DATE(attack_date)={}'.format(cal_table, date1))
+        conn.commit()
+        cursor.executemany(
+            'insert into {0}(attack_date,assert_id,attack_cnt,Predict,{1}) values(%s,%s,%s,%s, {2})'.format(
+                cal_table, ','.join(field_names), ','.join(['%s'] * len(field_names))), values)
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+
 # def get_history_data(table_name, options):
 #     conn = pymysql.connect(host=options['host'], user=options['user'], passwd=options['passwd'],
 #                            port=int(options['port']), db=options['db'], charset='utf8')
@@ -117,7 +148,7 @@ def update_predict_data(table_name, options, date1):
                 conn.commit()
     for d1 in date1_data:
         if not d1[2]:
-            pred_v = int(uniform(0.9,1.1)*d1[1])
+            pred_v = int(uniform(0.9, 1.1) * d1[1])
             cur.execute(update_sql.format(table_name, str([pred_v]), date1, d1[0]))
             conn.commit()
 
@@ -346,6 +377,8 @@ if __name__ == "__main__":
     for _event, _cal_table in zip(events, options['cal_table_names']):
         try:
             get_solr_data(yesterday, _event, _cal_table, options)
+            if _event == '3001':
+                get_vul_from_mysql(yesterday, 'VULN_RESULT', _cal_table, options)
         except Exception, e:
             print _event, e
 
