@@ -13,6 +13,7 @@ const alipayHome = className("android.widget.TextView").text("首页");
 const antIcon = className("android.widget.TextView").text("蚂蚁森林");
 const hezhong = className("android.widget.Button").desc("合种");
 const myEnergyCat = className("android.view.View").descMatches(/线下支付|行走|生活缴费/);
+const energy = className("android.widget.Button").descStartsWith("收集能量");
 const canget = className("android.view.View").descEndsWith("可收取");
 const moreFriend = className('android.view.View').desc("查看更多好友");
 const noMore = className('android.view.View').desc("没有更多了");
@@ -31,60 +32,63 @@ images.requestScreenCapture();
 
 function enter_ant_forest() {
     max_retry_times = 5;
-    click(680, 1080);
-    sleep(timeout);
+    //click(680, 1080);
+    //sleep(timeout);
     launch(alipay_package); //启动支付宝
-    sleep(timeout);
-    let home = alipayHome.findOne(timeout);
-    while (!home && max_retry_times) {
-        log("进入支付宝首页失败，可能在支付宝别的界面，按返回键直到首页");
-        back();
-        max_retry_times -= 1;
-        sleep(timeout);
-        home = alipayHome.findOne(timeout);
-    }
-    if (max_retry_times) {
-        log("进入支付宝首页成功");
-    } else {
-        log("进入支付宝首页失败");
-        let time = new Date();
-        images.captureScreen('/sdcard/脚本/' + time.getMinutes() + '_' + time.getSeconds() + '.jpg');
-        return false;
-    }
-
-    let ant_forest = antIcon.findOne(timeout);
-    if (!ant_forest) {
-        click_widget(home);
-        click(100, 2180);   //首页坐标，防止点击控件失败，重复点击，不影响
-    }
-
-    ant_forest = antIcon.findOne(timeout);
-    click_widget(ant_forest);
+    sleep(timeout * 3);
+    click(945, 530);    //蚂蚁森林坐标，防止点击控件失败
     sleep(timeout * 5);
-    let hz = hezhong.findOne(timeout);
-    if (!hz) {
-        sleep(timeout * 20);
-    }
-    ant_forest = antIcon.findOne(timeout);
-    if (!hz && ant_forest) {
-        click(945, 530);    //蚂蚁森林坐标，防止点击控件失败
-        sleep(timeout * 5);
-    }
-    hz = hezhong.findOne(timeout);
-    if (!hz) {
-        sleep(timeout * 20);
-    }
-    hz = hezhong.findOne(timeout);
-    if (hz) {
-        log("进入蚂蚁森林成功");
-    } else {
-        log("进入支蚂蚁森林失败");
-        let time = new Date();
-        images.captureScreen('/sdcard/脚本/' + time.getMinutes() + '_' + time.getSeconds() + '.jpg');
-        return false;
-    }
+    // let home = alipayHome.findOne(timeout);
+    // while (!home && max_retry_times) {
+    //     log("进入支付宝首页失败，可能在支付宝别的界面，按返回键直到首页");
+    //     back();
+    //     max_retry_times -= 1;
+    //     sleep(timeout);
+    //     home = alipayHome.findOne(timeout);
+    // }
+    // if (max_retry_times) {
+    //     log("进入支付宝首页成功");
+    // } else {
+    //     log("进入支付宝首页失败");
+    //     let time = new Date();
+    //     images.captureScreen('/sdcard/脚本/' + time.getMinutes() + '_' + time.getSeconds() + '.jpg');
+    //     return false;
+    // }
+    //
+    // let ant_forest = antIcon.findOne(timeout);
+    // if (!ant_forest) {
+    //     click_widget(home);
+    //     click(100, 2180);   //首页坐标，防止点击控件失败，重复点击，不影响
+    // }
+    //
+    // ant_forest = antIcon.findOne(timeout);
+    // click_widget(ant_forest);
+    // sleep(timeout * 5);
+    // let hz = hezhong.findOne(timeout);
+    // if (!hz) {
+    //     sleep(timeout * 20);
+    // }
+    // ant_forest = antIcon.findOne(timeout);
+    // if (!hz && ant_forest) {
+    //     click(945, 530);    //蚂蚁森林坐标，防止点击控件失败
+    //     sleep(timeout * 5);
+    // }
 
-    return true;
+    // hz = hezhong.findOne(timeout);
+    // if (!hz) {
+    //     sleep(timeout * 10);
+    // }
+    // hz = hezhong.findOne(timeout);
+    // if (hz) {
+    //     log("进入蚂蚁森林成功");
+    // } else {
+    //     log("进入蚂蚁森林失败");
+    //     let time = new Date();
+    //     images.captureScreen('/sdcard/脚本/' + time.getMinutes() + '_' + time.getSeconds() + '.jpg');
+    //     return false;
+    // }
+    //
+    // return true;
 }
 
 
@@ -102,10 +106,10 @@ function unique(arr) {
 
 function get_my_energy() {
     log("get_my_energy");
-    let selectors = myEnergyCat.find();
+    let selectors = energy.find();
     if (!selectors.empty()) {
         let points = selectors.map(e => [e.bounds().centerX(), e.bounds().centerY() - 60]);
-        // log(unique(points))
+        // log(unique(points));
         unique(points).map(e => click(e[0], e[1]));
         sleep(timeout)
     }
@@ -119,10 +123,10 @@ function get_energy() {
         click(W / 2, handSpace.y + 20);// 可能按不进去
         sleep(2000);
         if (inforest.findOne(timeout)) {  //可能缓冲很久
-            let selectors = canget.find();
+            let selectors = energy.find();
             if (!selectors.empty()) {
                 let points = selectors.map(e => [e.bounds().centerX(), e.bounds().centerY() - 60]);
-                // log(unique(points))
+                // log(unique(points));
                 unique(points).map(e => click(e[0], e[1]));
                 sleep(timeout)
             }
@@ -134,11 +138,20 @@ function get_energy() {
 }
 
 function get_friends_energy() {
-    moreFriend.waitFor();
+    //moreFriend.waitFor();
     let mf = moreFriend.findOne(timeout);
-    mf.click();
+    if (mf) {
+        mf.click();
+    }
+    else {
+        swipe_count = 3;
+        for (let i = 0; i < swipe_count; i++) {
+            swipe(100, 1900, 100, 400, 100);
+            sleep(timeout);
+        }
+        click(500, 800);
+    }
     sleep(3000);
-    friendRank.waitFor();
     //noMore控件初始找不到，后来能找到但滑不到最下面，往下滑十次
     swipe_count = 10;
     for (let i = 0; i < swipe_count; i++) {
@@ -148,9 +161,7 @@ function get_friends_energy() {
     }
 
     back();
-    sleep(timeout);
-    back();
-    sleep(timeout);
+    sleep(timeout * 3);
 }
 
 function unlock_screen() {
@@ -183,7 +194,7 @@ function unlock_screen() {
 
 if (unlock_screen()) {
     let is_forest = enter_ant_forest();
-    while (is_forest) {
+    while (1) {
         get_my_energy();
         get_friends_energy();
 
@@ -196,6 +207,6 @@ if (unlock_screen()) {
         } else {
             sleep(timeout * 60 * 5)
         }
-        is_forest = enter_ant_forest();
+        //is_forest = enter_ant_forest();
     }
 }
