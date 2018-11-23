@@ -117,8 +117,8 @@ def update_predict_data(table_name, options, date1):
                 conn.commit()
     for d1 in date1_data:
         if not d1[2]:
-            pred_v = int(uniform(0.9,1.1)*d1[1])
-            cur.execute(update_sql.format(table_name, str([pred_v]), date1, d1[0]))
+            pred_v = [int(uniform(0.8,1.2)*d1[1]) for _ in range(7)]
+            cur.execute(update_sql.format(table_name, str(pred_v), date1, d1[0]))
             conn.commit()
 
     cur.close()
@@ -143,11 +143,10 @@ def delete_data(options):
                            port=int(options['port']), db=options['db'], charset='utf8')
     cur = conn.cursor()
     for warn_table in options['warn_table_names']:
-        cur.execute('select ID from {}'.format(warn_table))
-        results = cur.fetchall()
-        for _id in results:
-            cur.execute('delete from {} where ID={}'.format(base_table, _id[0]))
-        cur.execute('delete from {}'.format(warn_table))
+        sql = "delete from {} where id in(select id from {} where create_time>=STR_TO_DATE(DATE_FORMAT(now(),'%Y-%m-%d'),'%Y-%m-%d'));"
+        cur.execute(sql.format(warn_table, base_table))
+    sql = "delete from {} where create_time>=STR_TO_DATE(DATE_FORMAT(now(), '%Y-%m-%d'),'%Y-%m-%d');"
+    cur.execute(sql.format(base_table))
     conn.commit()
     cur.close()
     conn.close()

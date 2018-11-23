@@ -2,7 +2,7 @@
 
 from socket import *
 
-HOST = '10.21.37.18'
+HOST = '10.21.37.198'
 PORT = 15000
 
 s = socket(AF_INET, SOCK_DGRAM)

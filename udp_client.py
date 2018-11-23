@@ -7,7 +7,7 @@ import itertools
 from random import choice
 from copy import copy
 
-address = ('10.21.17.207', 16000)
+address = ('10.21.37.198', 15000)
 
 s = socket(AF_INET, SOCK_DGRAM)
 
@@ -105,7 +105,7 @@ def send_tda_data():
                 "\tthreatType=%(threatType)s" \
                 "\tpAttackPhase=%(pAttackPhase)s"
 
-    for _ in range(100):
+    for _ in range(2):
         base_dict = {'dst': choice(nanjing), 'src': choice(foreign_province), 'malType': choice(malType),
                      'malName': choice(malName), 'sev': choice(sev), 'deviceDirection': choice(deviceDirection),
                      'cccaDetection': choice(cccaDetection), 'threatType': choice(threatType_all),
@@ -125,6 +125,7 @@ def send_tda_data():
         data_dict['pAttackPhase'] = pAttackPhase[1]
         tda_data = base_data % data_dict
         s.sendto(tda_data, address)
+        break
 
         data_dict['src'] = choice(foreign_province)
         data_dict['pAttackPhase'] = pAttackPhase[2]
