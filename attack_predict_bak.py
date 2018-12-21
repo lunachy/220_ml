@@ -54,7 +54,7 @@ def get_solr_data(date1, event, cal_table, options):
     # [attack_cnt, Predict] + field_names
     _dict = defaultdict(lambda: [0, ''] + [''] * len(field_names))
     solr = Solr('{0}/solr/{1}_{2}'.format(options['solr_host'], event, date1))
-    results = solr.search('*:*', rows=10000)
+    results = solr.search('*:*', rows=100)
     print event, len(results)
     for data in results:
         if 'DST_IP' in data:
@@ -109,17 +109,17 @@ def update_predict_data(table_name, options, date1):
     cur.execute(select_sql.format(table_name, date2))
     date2_data = cur.fetchall()
 
+    # for d1 in date1_data:
+    #     for d2 in date2_data:
+    #         if d1[0] == d2[0]:
+    #             pred_value = [d1[1]] + map(int, d2[2].strip('[').strip(']').split(','))
+    #             cur.execute(update_sql.format(table_name, str(pred_value[:30]), date1, d1[0]))
+    #             conn.commit()
     for d1 in date1_data:
-        for d2 in date2_data:
-            if d1[0] == d2[0]:
-                pred_value = [d1[1]] + map(int, d2[2].strip('[').strip(']').split(','))
-                cur.execute(update_sql.format(table_name, str(pred_value[:30]), date1, d1[0]))
-                conn.commit()
-    for d1 in date1_data:
-        if not d1[2]:
-            pred_v = [int(uniform(0.8,1.2)*d1[1]) for _ in range(7)]
-            cur.execute(update_sql.format(table_name, str(pred_v), date1, d1[0]))
-            conn.commit()
+        # if not d1[2]:
+        pred_v = [int(uniform(0.8,1.2)*d1[1]) for _ in range(7)]
+        cur.execute(update_sql.format(table_name, str(pred_v), date1, d1[0]))
+        conn.commit()
 
     cur.close()
     conn.close()
@@ -145,6 +145,9 @@ def delete_data(options):
     for warn_table in options['warn_table_names']:
         sql = "delete from {} where id in(select id from {} where create_time>=STR_TO_DATE(DATE_FORMAT(now(),'%Y-%m-%d'),'%Y-%m-%d'));"
         cur.execute(sql.format(warn_table, base_table))
+    for cal_table in options['cal_table_names']:
+        sql = "delete from {} where TO_DAYS( NOW( ) ) - TO_DAYS(attack_date) <= 1 ;"
+        cur.execute(sql.format(cal_table))
     sql = "delete from {} where create_time>=STR_TO_DATE(DATE_FORMAT(now(), '%Y-%m-%d'),'%Y-%m-%d');"
     cur.execute(sql.format(base_table))
     conn.commit()
@@ -342,13 +345,15 @@ if __name__ == "__main__":
     events = ['password_guessing_attack', 'web_attack', 'malicious_scan_attack', 'malicious_program_attack',
               'ddos_attack', 'log_damage_detection', 'system_privilege_detection',
               'error_log_detection', 'vuln_used', 'conf_compliance_used', 'weak_pwd_used']
+
+    delete_data(options)
+
     for _event, _cal_table in zip(events, options['cal_table_names']):
         try:
             get_solr_data(yesterday, _event, _cal_table, options)
         except Exception, e:
             print _event, e
 
-    delete_data(options)
 
     for cal_table, warn_table in zip(options['cal_table_names'], options['warn_table_names']):
         # df_history_table = get_history_data(cal_table, options)
