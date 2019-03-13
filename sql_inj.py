@@ -1,7 +1,8 @@
 #!/usr/bin/python
 # coding=utf-8
 
-from kafka import KafkaConsumer
+# from kafka import KafkaConsumer
+import os
 import json
 import time
 import pymysql
@@ -10,18 +11,21 @@ import traceback
 import requests
 import sys
 import re
+import urllib2
+from bs4 import BeautifulSoup
 from datetime import datetime
+from ConfigParser import RawConfigParser
 
-HOST = '10.200.163.6'
-DBNAME = 'SSA'
-USER = 'root'
-PASSWD = '1qazXSW@3edc'
-PORT = 3306
+# HOST = '10.200.163.6'
+# DBNAME = 'SSA'
+# USER = 'root'
+# PASSWD = '1qazXSW@3edc'
+# PORT = 3306
 
-sqlmap_server = 'http://127.0.0.1:8775'
+# sqlmap_server = 'http://127.0.0.1:8775'
 
-kafka_addr = '10.200.163.97:9092'
-topic = 'cemb_accesslog'
+# kafka_addr = '10.200.163.97:9092'
+# topic = 'cemb_accesslog'
 
 log = logging.getLogger('sql_inj')
 
@@ -39,9 +43,20 @@ def init_logging(log_file):
     log.setLevel(logging.INFO)
 
 
+def read_conf(conf_path):
+    cfg = RawConfigParser()
+    cfg.read(conf_path)
+    _keys = ['host', 'user', 'passwd', 'port', 'db', 'charset']
+    _options = {}
+    for _k in _keys:
+        _options[_k] = cfg.get('mysql', _k).strip()
+    _options['port'] = int(_options['port'])
+    return _options
+
+
 def insert_sql(item):
     try:
-        conn = pymysql.connect(host=HOST, port=PORT, user=USER, passwd=PASSWD, db=DBNAME, charset="utf8")
+        conn = pymysql.connect(**options)
         cur = conn.cursor()
         cur.execute('insert into ebank_poc_sqlinj(srcIp, time, method, data, url, srcType) values(%s,%s,%s,%s,%s,%s)',
                     item)
@@ -79,7 +94,7 @@ class AutoSqli(object):
             if len(self.taskid) > 0:
                 return True
             return False
-        except ConnectionError:
+        except requests.exceptions.ConnectionError:
             log.error("sqlmapapi.py is not running")
 
     def task_delete(self):
@@ -163,38 +178,77 @@ class AutoSqli(object):
         self.task_delete()
 
 
-def detect_sql_inj():
+def craw_url(url):
+    def filter_link(_url):
+        if _url and _url != '#':
+            if _url.startswith('http://www.baidu.com') or _url.startswith('https://www.baidu.com'):
+                return True
+
+    ua = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36"
+    request = urllib2.Request(url, headers={"User-Agent": ua})
+    r = urllib2.urlopen(request)
+    if r.code == 200:
+        data = r.read()
+        # log.info(data)
+        # response = etree.HTML(data)
+        soup = BeautifulSoup(data, 'lxml')
+        links = map(lambda link: link.get('href'), soup.find_all('a'))
+        return filter(filter_link, links)
+
+    else:
+        log.error("can't open start url, exit!")
+        sys.exit()
+
+
+def detect_sql_inj_1(urls):
     log.info('start detecting sql injection.')
     s = r"union( |%20|\+|%2B)+select|and( |%20|\+|%2B)+\d=\d|or( |%20|\+|%2B)+\d=\d|select( |%20|\+|%2B).+from( |%20|\+|%2B)|select( |%20|\+|%2B).+version|delete( |%20|\+|%2B).+from( |%20|\+|%2B)|insert( |%20|\+|%2B).+into( |%20|\+|%2B)|update( |%20|\+|%2B).+set( |%20|\+|%2B)|(CREATE|ALTER|DROP|TRUNCATE)( |%20|\+|%2B).+(TABLE|DATABASE)|asc\(|mid\(|char\(|xp_cmdshell|;exec( |%20|\+|%2B)"
     pattern = re.compile(s, re.IGNORECASE)
+    for url in urls:
+        ret = re.search(pattern, url)
+        if ret:
+            log.info('detect sql injecting: %s', url)
+            # log.warning('\033[1;33;40minjection\033[0m')
+            # item = [data['srcIp_s'], data['time_dt'], data['method_s'], data['data_s'], data['url_s'], 'httplog']
+            # insert_sql(item)
 
-    # auto_offset_reset should set to 'latest' in real situation, 'earliest' just for test
-    try:
-        consumer = KafkaConsumer(topic, bootstrap_servers=kafka_addr, auto_offset_reset='latest')
-    except:
-        log.error('connect kafka failed, msg: %s', traceback.format_exc())
-        sys.exit()
 
-    while 1:
-        ct = 0
-        for ct, msg in enumerate(consumer, 1):
-            data = json.loads(msg.value)
-            url_all = data['url_s'] + data['data_s']
-            ret = re.search(pattern, url_all)
-            if ret:
-                log.info(data)
-                log.warning('\033[1;33;40minjection\033[0m')
-                item = [data['srcIp_s'], data['time_dt'], data['method_s'], data['data_s'], data['url_s'], 'httplog']
-                insert_sql(item)
-            # else:
-            #     log.info('\033[1;32;40mno injection\033[0m')
-            if ct % 10000 == 0:
-                log.info('kafka data count: %s', ct)
-
-        break
-    # consumer.close()
+# def detect_sql_inj():
+#     log.info('start detecting sql injection.')
+#     s = r"union( |%20|\+|%2B)+select|and( |%20|\+|%2B)+\d=\d|or( |%20|\+|%2B)+\d=\d|select( |%20|\+|%2B).+from( |%20|\+|%2B)|select( |%20|\+|%2B).+version|delete( |%20|\+|%2B).+from( |%20|\+|%2B)|insert( |%20|\+|%2B).+into( |%20|\+|%2B)|update( |%20|\+|%2B).+set( |%20|\+|%2B)|(CREATE|ALTER|DROP|TRUNCATE)( |%20|\+|%2B).+(TABLE|DATABASE)|asc\(|mid\(|char\(|xp_cmdshell|;exec( |%20|\+|%2B)"
+#     pattern = re.compile(s, re.IGNORECASE)
+#
+#     # auto_offset_reset should set to 'latest' in real situation, 'earliest' just for test
+#     try:
+#         consumer = KafkaConsumer(topic, bootstrap_servers=kafka_addr, auto_offset_reset='latest')
+#     except:
+#         log.error('connect kafka failed, msg: %s', traceback.format_exc())
+#         sys.exit()
+#
+#     while 1:
+#         ct = 0
+#         for ct, msg in enumerate(consumer, 1):
+#             data = json.loads(msg.value)
+#             url_all = data['url_s'] + data['data_s']
+#             ret = re.search(pattern, url_all)
+#             if ret:
+#                 log.info(data)
+#                 log.warning('\033[1;33;40minjection\033[0m')
+#                 item = [data['srcIp_s'], data['time_dt'], data['method_s'], data['data_s'], data['url_s'], 'httplog']
+#                 insert_sql(item)
+#             # else:
+#             #     log.info('\033[1;32;40mno injection\033[0m')
+#             if ct % 10000 == 0:
+#                 log.info('kafka data count: %s', ct)
+#
+#         break
+#     # consumer.close()
 
 
 if __name__ == '__main__':
     init_logging('sql_inj.log')
-    detect_sql_inj()
+    options = read_conf(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.conf'))
+    url = 'xxx'
+    urls = craw_url(url)
+    print(urls)
+    detect_sql_inj_1(urls)

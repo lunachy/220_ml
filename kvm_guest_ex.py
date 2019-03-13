@@ -85,7 +85,7 @@ class VmOperation(object):
         self.init_vms = [
             # INIT_VM("win2k3_sp2s_",      "52:54:00:33:10:",  2,  20,  "524288", "fca2a5fd-f42c-4a62-53f0-9253bde310"),
             # INIT_VM("winxp_sp2s_",       "52:54:00:33:11:",  2,  26,  "524288", "fca2a5fd-f42c-4a62-53f0-9253bde311"),
-            INIT_VM("winxp_sp3_", "52:54:00:33:a4:", 50, 50, "524288", "fca2a5fd-f42c-4a62-53f0-9253bde312"),
+            INIT_VM("winxp_sp3_", "52:54:00:33:a4:", 20, 50, "524288", "fca2a5fd-f42c-4a62-53f0-9253bde312"),
             # INIT_VM("win7_sp1_32s_",     "52:54:00:33:13:",  2,  36, "1048576", "fca2a5fd-f42c-4a62-53f0-9253bde313"),
             #
             # INIT_VM("winxp_sp3_10l_",    "52:54:00:33:19:", 10, 115,  "524288", "fca2a5fd-f42c-4a62-53f0-9253bde319"),

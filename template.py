@@ -69,6 +69,26 @@ def multi_process(data):
     pool.join()
 
 
+class DB(object):
+    def __init__(self):
+        self.conn = pymysql.connect(**options)
+        self.cur = self.conn.cursor()
+        # self.num = self.cos.execute()
+
+    def __enter__(self):
+        return self.cur
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.conn.commit()
+        self.conn.close()
+        self.cur.close()
+
+
+with DB() as cur:
+    sql = 'xxx'
+    cur.execute(sql)
+    result = cur.fetchall()
+    
 if __name__ == '__main__':
     init_logging('/root/chy/{}.log'.format(__file__[:-3]))
     options = read_conf(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.conf'))

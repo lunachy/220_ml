@@ -22,8 +22,8 @@ def word2vec(inp, model_path):
 
 
 if __name__ == '__main__':
-    # wiki_file = 'zhwiki-latest-pages-articles.xml.bz2'
-    wiki_file = 'zhwiki-latest-pages-articles4.xml-p2654618p2771086.bz2'
+    wiki_file = 'zhwiki-latest-pages-articles.xml.bz2'
+    # wiki_file = 'zhwiki-latest-pages-articles4.xml-p2654618p2771086.bz2'
     output_file = 'wiki.zh.text'
     model_path = 'wiki.zh.text.model'
     preprocess_wiki_data(wiki_file, output_file)

@@ -95,6 +95,6 @@ def read_conf(conf_path):
 if __name__ == '__main__':
     options = read_conf(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.conf'))
     ret = load_black_domains()
-    black_domains = ret[:, 0]
-    cats = ret[:, 1]
+    black_domains = list(ret[:, 0])
+    cats = list(ret[:, 1])
     detect_dns()

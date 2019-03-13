@@ -37,6 +37,7 @@ function enter_ant_forest() {
     launch(alipay_package); //启动支付宝
     sleep(timeout * 3);
     click(945, 530);    //蚂蚁森林坐标，防止点击控件失败
+    //click(930, 976);
     sleep(timeout * 5);
     // let home = alipayHome.findOne(timeout);
     // while (!home && max_retry_times) {
@@ -105,6 +106,8 @@ function unique(arr) {
 }
 
 function get_my_energy() {
+    click(138, 648);
+    sleep(2000);
     log("get_my_energy");
     let selectors = energy.find();
     if (!selectors.empty()) {
@@ -116,7 +119,7 @@ function get_my_energy() {
 }
 
 function get_energy() {
-    let handSpace = images.findImage(images.captureScreen(), handimg, {region: [1000, 200]});
+    let handSpace = images.findImage(images.capetureScreen(), handimg, {region: [1000, 200]});
     while (handSpace) {
         //log(W / 2, handSpace.y + 20)
         sleep(timeout);
@@ -170,9 +173,10 @@ function unlock_screen() {
     while (!screen_on && max_retry_times) {
         device.wakeUp();
         sleep(timeout);
-        swipe(100, 1900, 100, 400, 100);
+        swipe(200, 1600, 900, 400, 300);
+        //swipe(100, 1900, 100, 400, 100);
         sleep(timeout);
-        let pass = [[540, 1675], [220, 1455], [860, 1675], [860, 1455], [220, 1455], [540, 2100]];
+        let pass = [[540, 1480], [220, 1260], [860, 1480], [860, 1260], [220, 1260], [540, 1920]];
         pass.map(e => click(e[0], e[1]));
 
         sleep(timeout * 12);
@@ -209,4 +213,5 @@ if (unlock_screen()) {
         }
         //is_forest = enter_ant_forest();
     }
+    back();
 }

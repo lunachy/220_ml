@@ -59,20 +59,21 @@ def getUser():
 @app.route("/domain/<domain>")
 @app.route("/ip/<ip>")
 def result_view(md5=None, url=None, domain=None, ip=None):
-    sql_base = "select signature, category_vt from {} where {}='{}'"
+    keys = 'score,signature,category_vt,collect_date,source'
+    sql_base = "select {} from {} where {}='{}' LIMIT 1"
     response = {}
     if md5:
         response['md5'] = md5
-        sql = sql_base.format('black_file', 'md5', md5)
+        sql = sql_base.format(keys, 'black_file', 'md5', md5)
     elif url:
         response['url'] = url
-        sql = sql_base.format('black_url', 'url', url)
+        sql = sql_base.format(keys, 'black_url', 'url', url)
     elif domain:
         response['domain'] = domain
-        sql = sql_base.format('black_domain', 'domain', domain)
+        sql = sql_base.format(keys, 'black_domain', 'domain', domain)
     elif ip:
         response['ip'] = ip
-        sql = sql_base.format('black_ip', 'ip', ip)
+        sql = sql_base.format(keys, 'black_ip', 'ip', ip)
     else:
         return json_error(400, "Invalid lookup term")
 
@@ -82,9 +83,7 @@ def result_view(md5=None, url=None, domain=None, ip=None):
 
     if not result:
         return json_error(404, "sample not found")
-
-    response['signature'] = result[0]
-    response['category_vt'] = result[1]
+    response.update({_key: result[_i] for _i, _key in enumerate(keys.split(','))})
     return jsonify(response)
 
 

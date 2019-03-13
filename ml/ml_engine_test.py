@@ -8,7 +8,7 @@ from collections import OrderedDict
 from uuid import uuid1
 import logging.handlers
 
-log = logging.getLogger('brute_force')
+log = logging.getLogger('ml_engine')
 
 
 def init_logging(log_file):
@@ -118,11 +118,11 @@ model_paras = OrderedDict([
 ])
 
 if __name__ == '__main__':
-    init_logging('/root/chy/ml_engine_test.log')
+    init_logging('/data/chy/ml_engine_test.log')
     cmd_model = """
         curl -H "Content-type: application/json" -X POST http://10.21.37.198:7777/{} -d '{}'
         """
-    train_path = '/root/chy/train_classification.csv'
+    train_path = '/data/chy/train_classification.csv'
     features = ''
 
     # train
@@ -136,13 +136,13 @@ if __name__ == '__main__':
                 if _paras_d['penalty'] == 'l1' and _paras_d['solver'] in ['newton-cg', 'lbfgs', 'sag']:
                     break
             if model_id.startswith('1'):
-                train_path = '/root/chy/train_classification.csv'
+                train_path = '/data/chy/train_classification.csv'
                 features = 'label,' + ','.join(map(str, range(0, 100)))  # 2838
             if model_id.startswith('2'):
-                train_path = '/root/chy/train_regression.csv'
+                train_path = '/data/chy/train_regression.csv'
                 features = 'label,h,i,j,k,l,m,n,o,p,q'
             if model_id.startswith('3'):
-                train_path = '/root/chy/train_cluster.csv'
+                train_path = '/data/chy/train_cluster.csv'
                 features = ','.join(map(str, range(0, 100)))  # 2838
             _data = _paras_d.update({'data_input_path': train_path, 'features': features, 'model_id': model_id,
                                      'train_nickname': 'train_nickname', 'train_id': str(uuid1())})
