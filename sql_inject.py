@@ -12,6 +12,7 @@ import requests
 import sys
 import re
 import urllib2
+import argparse
 from bs4 import BeautifulSoup
 from datetime import datetime
 from ConfigParser import RawConfigParser
@@ -116,12 +117,12 @@ def sqlmap(host):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-u", '--url', type=str, help="url", action="store", required=True, default=None)
+    args = parser.parse_args()
     init_logging('sql_inj.log')
-    log.info('please make sure sqlmap server already started!')
-    # log.info('start sqlmapapi server...')
-    # sqlmapapi.server()
     options = read_conf(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.conf'))
-    url = 'http://192.168.1.187/DVWA/vulnerabilities/sqli/?id=123&Submit=Submit&user_token=872b69fde2f878dafcdbc1e1c80b91d8'
-    urls = craw_url(url)
+    # url = 'http://192.168.1.187/DVWA/vulnerabilities/sqli/?id=123&Submit=Submit&user_token=872b69fde2f878dafcdbc1e1c80b91d8'
+    urls = craw_url(args.url)
     # log.info(urls)
     map(sqlmap, urls)
