@@ -38,58 +38,7 @@ function enter_ant_forest() {
     sleep(timeout * 3);
     click(945, 530);    //蚂蚁森林坐标，防止点击控件失败
     //click(930, 976);
-    sleep(timeout * 5);
-    // let home = alipayHome.findOne(timeout);
-    // while (!home && max_retry_times) {
-    //     log("进入支付宝首页失败，可能在支付宝别的界面，按返回键直到首页");
-    //     back();
-    //     max_retry_times -= 1;
-    //     sleep(timeout);
-    //     home = alipayHome.findOne(timeout);
-    // }
-    // if (max_retry_times) {
-    //     log("进入支付宝首页成功");
-    // } else {
-    //     log("进入支付宝首页失败");
-    //     let time = new Date();
-    //     images.captureScreen('/sdcard/脚本/' + time.getMinutes() + '_' + time.getSeconds() + '.jpg');
-    //     return false;
-    // }
-    //
-    // let ant_forest = antIcon.findOne(timeout);
-    // if (!ant_forest) {
-    //     click_widget(home);
-    //     click(100, 2180);   //首页坐标，防止点击控件失败，重复点击，不影响
-    // }
-    //
-    // ant_forest = antIcon.findOne(timeout);
-    // click_widget(ant_forest);
-    // sleep(timeout * 5);
-    // let hz = hezhong.findOne(timeout);
-    // if (!hz) {
-    //     sleep(timeout * 20);
-    // }
-    // ant_forest = antIcon.findOne(timeout);
-    // if (!hz && ant_forest) {
-    //     click(945, 530);    //蚂蚁森林坐标，防止点击控件失败
-    //     sleep(timeout * 5);
-    // }
-
-    // hz = hezhong.findOne(timeout);
-    // if (!hz) {
-    //     sleep(timeout * 10);
-    // }
-    // hz = hezhong.findOne(timeout);
-    // if (hz) {
-    //     log("进入蚂蚁森林成功");
-    // } else {
-    //     log("进入蚂蚁森林失败");
-    //     let time = new Date();
-    //     images.captureScreen('/sdcard/脚本/' + time.getMinutes() + '_' + time.getSeconds() + '.jpg');
-    //     return false;
-    // }
-    //
-    // return true;
+    sleep(timeout * 10);
 }
 
 
@@ -119,17 +68,18 @@ function get_my_energy() {
 }
 
 function get_energy() {
-    let handSpace = images.findImage(images.capetureScreen(), handimg, {region: [1000, 200]});
+    let handSpace = images.findImage(images.captureScreen(), handimg, {region: [1000, 200]});
+    //log(handSpace);
     while (handSpace) {
         //log(W / 2, handSpace.y + 20)
         sleep(timeout);
         click(W / 2, handSpace.y + 20);// 可能按不进去
-        sleep(2000);
+        sleep(5000);
         if (inforest.findOne(timeout)) {  //可能缓冲很久
             let selectors = energy.find();
             if (!selectors.empty()) {
                 let points = selectors.map(e => [e.bounds().centerX(), e.bounds().centerY() - 60]);
-                // log(unique(points));
+                //log(unique(points));
                 unique(points).map(e => click(e[0], e[1]));
                 sleep(timeout)
             }
@@ -145,8 +95,7 @@ function get_friends_energy() {
     let mf = moreFriend.findOne(timeout);
     if (mf) {
         mf.click();
-    }
-    else {
+    } else {
         swipe_count = 3;
         for (let i = 0; i < swipe_count; i++) {
             swipe(100, 1900, 100, 400, 100);
@@ -197,7 +146,7 @@ function unlock_screen() {
 }
 
 if (unlock_screen()) {
-    let is_forest = enter_ant_forest();
+    enter_ant_forest();
     while (1) {
         get_my_energy();
         get_friends_energy();
@@ -211,7 +160,6 @@ if (unlock_screen()) {
         } else {
             sleep(timeout * 60 * 5)
         }
-        //is_forest = enter_ant_forest();
     }
     back();
 }
