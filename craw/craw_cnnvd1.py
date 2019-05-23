@@ -1,81 +1,67 @@
 #!/usr/bin/python
 # coding=utf-8
+__author = 'chy'
 
 import os
-import urllib
 import urllib2
-from time import sleep
+import time
 import sys
 from bs4 import BeautifulSoup
 from lxml import etree
 import shutil
 import requests
-import json
-from random import choice
 import MySQLdb
 import logging.handlers
-import threading
-import Queue
-import signal
-from multiprocessing import cpu_count, Pool
 import argparse
 from math import ceil
-from functools import partial
+from ConfigParser import RawConfigParser
 
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-log_dir = '/root/'
-failed_page_file = 'tfailed_page.txt'
-success_page_file = 'tsuccess_page.txt'
-failed_page_file_1 = 'tfailed_page_1.txt'
-cnt_file = 'cnt.txt'
+failed_url_file = 'cnnvd_failed_url.txt'
+failed_url_file_1 = 'cnnvd_failed_url_1.txt'
+failed_page_file = 'cnnvd_failed_page.txt'
+failed_page_file_1 = 'cnnvd_failed_page_1.txt'
+success_page_file = 'cnnvd_success_page.txt'
+cnt_file = 'cnnvd_cnt.txt'
 ua = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36"
 cnnvd_url = 'http://www.cnnvd.org.cn/web/vulnerability/querylist.tag'
-log_file = os.path.splitext(__file__)[0] + '.log'
+today = time.strftime("%Y-%m-%d")
 
 log = logging.getLogger()
-formatter = logging.Formatter('%(asctime)s [%(name)s] %(levelname)s: %(message)s')
-
-fh = logging.handlers.WatchedFileHandler(log_file)
-fh.setFormatter(formatter)
-log.addHandler(fh)
-ch = logging.StreamHandler()
-ch.setFormatter(formatter)
-log.addHandler(ch)
-
-log.setLevel(logging.INFO)
-
-HOST = '10.21.37.198'
-DBNAME = 'Vuldb'  # 数据库名字，请修改
-USER = 'ml'  # 数据库账号，请修改
-PASSWD = '123456'  # 数据库密码，请修改
-PORT = 3306  # 数据库端口，在dbhelper中使用
-CPU_COUNT = cpu_count()
 
 
-def init_worker():
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
+def init_logging(log_file):
+    formatter = logging.Formatter('%(asctime)s [%(name)s] %(levelname)s: %(message)s')
+
+    fh = logging.handlers.WatchedFileHandler(log_file)
+    fh.setFormatter(formatter)
+    log.addHandler(fh)
+    ch = logging.StreamHandler()
+    ch.setFormatter(formatter)
+    log.addHandler(ch)
+
+    log.setLevel(logging.INFO)
 
 
-def url_open(url):
-    if proxies:
-        proxy = choice(proxies)
-        handler = urllib2.ProxyHandler(proxy)
-        opener = urllib2.build_opener(handler)
-        urllib2.install_opener(opener)
-    request = urllib2.Request(url, headers={"User-Agent": ua})
-    return urllib2.urlopen(request, timeout=10)
+def read_conf():
+    cfg = RawConfigParser()
+    cfg.read('conf/settings.conf')
+    _keys = ['host', 'user', 'passwd', 'port', 'source_db']
+    _options = {_k: cfg.get('mysql', _k).strip() for _k in _keys}
+    return _options
 
 
-def to_page(page, page_file=failed_page_file):
+def to_page(page, page_file):
     with open(page_file, 'a') as f:
         f.write(page)
         f.write('\n')
 
 
 def get_last_page_num(url=cnnvd_url):
-    r = url_open(url)
+    request = urllib2.Request(url, headers={"User-Agent": ua})
+    r = urllib2.urlopen(request)
     if r.code == 200:
         data = r.read()
         response = etree.HTML(data)
@@ -87,7 +73,8 @@ def get_last_page_num(url=cnnvd_url):
 
 
 def get_total_count(url=cnnvd_url):
-    r = url_open(url)
+    request = urllib2.Request(url, headers={"User-Agent": ua})
+    r = urllib2.urlopen(request)
     if r.code == 200:
         data = r.read()
         response = etree.HTML(data)
@@ -101,43 +88,99 @@ def get_total_count(url=cnnvd_url):
 
 
 def get_ldxx(sel):
+    ldxx = ''
     if sel.xpath('a'):
-        return sel.xpath('a/text()')[0].strip()
-    else:
-        return ''
+        try:
+            ldxx = sel.xpath('a/text()')[0].strip()
+        except:
+            pass
+    return ldxx
 
 
 def parse_url(url):
-    r = url_open(url)
+    """parse fileds from vul url, insert fileds into sql"""
+    request = urllib2.Request(url, headers={"User-Agent": ua})
+    r = urllib2.urlopen(request)
     if r.code == 200:
-        data = r.read()
-        response = etree.HTML(data)
+        try:
+            data = r.read()
+        except Exception, e:
+            # Incomplete url: http://www.cnnvd.org.cn/web/xxk/ldxqById.tag?CNNVD=CNNVD-200508-076
+            # Error: IncompleteRead(3788 bytes read, 142 more expected)
+            log.error('read data failed, url[%s], msg: %s' % (url, e))
+            return
+        else:
+            response = etree.HTML(data)
+            log.info('crawl url[%s]', url)
     else:
-        return ''
-    sel_ldxxxq = response.xpath('//div[@class="detail_xq w770"]')[0]
-    sel_ldxxxq1 = sel_ldxxxq.xpath('ul/li')
-    # '漏洞名称 CNNVD编号 危害等级 CVE编号 漏洞类型 发布时间 威胁类型 更新时间 厂商 漏洞来源'
-    level, cveid, type, pubtime, ttype, uptime, firm, source = map(get_ldxx, sel_ldxxxq1[1:])
-    cname = sel_ldxxxq.xpath('h2/text()')[0]
-    cnid = sel_ldxxxq1[0].xpath('span/text()')[0][len(u'CNNVD编号：'):]  # skip prefix[CNNVD编号：]
+        to_page(url, failed_url_file)
+        log.info('no data, url[%s]', url)
+        return
 
-    brief = ''
-    for _b in response.xpath('//div[@class="d_ldjj"]/p'):
-        brief += _b.xpath('text()')[0]
-    brief = brief.strip()
+    try:
+        sel_ldxxxq = response.xpath('//div[@class="detail_xq w770"]')[0]
+        sel_ldxxxq1 = sel_ldxxxq.xpath('ul/li')
+        # '漏洞名称 CNNVD编号 危害等级 CVE编号 漏洞类型 发布时间 威胁类型 更新时间 厂商 漏洞来源'
+        level, cveid, type, pubtime, ttype, uptime, manufacturer, source = map(get_ldxx, sel_ldxxxq1[1:])
+        cname = sel_ldxxxq.xpath('h2/text()')[0]
+        cnid = sel_ldxxxq1[0].xpath('span/text()')[0][len(u'CNNVD编号：'):]  # skip prefix[CNNVD编号：]
 
-    _p = response.xpath('//p[@class="ldgg"]')
-    patch = _p[0].xpath('text()')[0] if _p else ''
-    item = [cnid, cname, pubtime, uptime, level, type, cveid, source, brief, patch, ttype]
-    return item
+        brief = ''
+        for _b in response.xpath('//div[@class="d_ldjj"]/p'):
+            brief += _b.xpath('text()')[0]
+        brief = brief.strip()
+
+        patch = ''
+        _p = response.xpath('//p[@class="ldgg"]')
+        if _p and _p[0].xpath('text()'):
+            patch = _p[0].xpath('text()')[0].strip()
+
+        affecttedproduct = ''
+        aps = response.xpath('//div[@class="vulnerability_list"]/ul')[0]
+        apsa = aps.xpath('li/div/a')
+        if apsa:
+            affecttedproduct = '\r\n'.join(map(lambda ap: ap.text.strip(), apsa))
+
+        # item = [cnid, cname, pubtime, uptime, manufacturer, level, type, cveid, source, affecttedproduct, brief, patch,
+        #         ttype]
+        item = [cnid, cname, pubtime, level, type, cveid, source, affecttedproduct, brief, patch,
+                ttype]
+    except Exception, e:
+        to_page(url, failed_url_file)
+        log.error("parse url[%s] failed, msg: %s." % (url, e))
+        return
+
+    conn = MySQLdb.connect(host=options['host'], port=int(options['port']), user=options['user'],
+                           passwd=options['passwd'], db=options['source_db'], charset='utf8')
+    cur = conn.cursor()
+
+    try:
+        # cur.execute(
+        #     'insert into cnnvd(cnid, cname, pubtime, uptime, manufacturer, level, type, cveid, source, '
+        #     'affecttedproduct, brief, patch, ttype, collect_date) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+        #     item + [today])
+        cur.execute(
+            'insert into cnnvd(cnnvd_id, title, publish_time, level, type, cveid, source, '
+            'affected_product, description, patch, ttype, collect_date) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+            item + [today])
+        conn.commit()
+    except Exception, e:
+        if e.args[0] == 1062:
+            pass
+        else:
+            to_page(url, failed_url_file)
+            log.error('insert_mysql failed! error msg: %s, current url: %s' % (e, url))
+    finally:
+        cur.close()
+        conn.close()
 
 
 def parse_next_page(next_page):
-    conn = MySQLdb.connect(host=HOST, port=PORT, user=USER, passwd=PASSWD, db=DBNAME, charset="utf8")
-    cur = conn.cursor()
-
-    r = url_open(next_page)
+    """parse vul urls from page"""
+    request = urllib2.Request(next_page, headers={"User-Agent": ua})
+    r = urllib2.urlopen(request)
     if r.code == 200:
+        log.info("crawl page[%s]", next_page)
         data = r.read()
         response = etree.HTML(data)
         url_pre = 'http://www.cnnvd.org.cn'
@@ -147,44 +190,26 @@ def parse_next_page(next_page):
             # GraphicsMagick 缓冲区错误漏洞
             if sel.find('CNNVD=CNNVD') != -1:
                 url = url_pre + sel
-                sleep(0.1)
-                item = parse_url(url)
-                if item:
-                    try:
-                        cur.execute(
-                            'insert into cnnvd_copy(cnid, cname, pubtime, uptime, level, type, cveid, source, '
-                            'brief, patch, ttype) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', item)
-                        conn.commit()
-                    except Exception, e:
-                        if e.args[0] == 1062:
-                            pass
-                        else:
-                            log.error('insert_mysql failed! error msg: %s, current url: %s' % (e, url))
-                else:
-                    log.error("can't open url: %s", url)
+                parse_url(url)
+            time.sleep(0.1)
         to_page(next_page, success_page_file)
-
     else:
-        to_page(next_page)
+        to_page(next_page, failed_page_file)
         log.error("can't open next_page: %s", next_page)
-
-    cur.close()
-    conn.close()
 
 
 def get_proxy():
-    test_url = 'https://www.baidu.com/'
     request = urllib2.Request("http://www.xicidaili.com/wn", headers={"User-Agent": ua})
     response = urllib2.urlopen(request)
     assert response.code == 200, 'www.xicidaili.com must be available'
     data = response.read()
 
-    root = etree.HTML(data)
+    soup = BeautifulSoup(data, 'lxml')
     proxies = []
-    for tr in root.xpath("//tr[@class]"):
-        tr = tr.xpath("td/text()")
+    for tr in soup.find_all('tr', class_=True):
         if len(tr) > 2:
-            proxy = {'https': 'https://{0}:{1}'.format(tr[0], tr[1])}
+            tds = tr.find_all('td')
+            proxy = {'https': 'https://{0}:{1}'.format(tds[1].text, tds[2].text)}
             try:
                 r = requests.get('http://www.xunlei.com/', proxies=proxy)
             except:
@@ -196,60 +221,27 @@ def get_proxy():
     return proxies
 
 
-class WorkManager(object):
-    def __init__(self, thread_num=4):
-        self.work_queue = Queue.Queue()
-        self.threads = []
-        self.__init_work_queue()
-        self.__init_thread_pool(thread_num)
-
-    def __init_thread_pool(self, thread_num):
-        for i in range(thread_num):
-            self.threads.append(Work(self.work_queue))
-
-    def __init_work_queue(self):
-        for i in range(1, 10):
-            # 任务入队，Queue内部实现了同步机制
-            self.work_queue.put(
-                (parse_next_page,
-                 "http://www.cnnvd.org.cn/web/vulnerability/querylist.tag?pageno={}&repairLd=".format(i)))
-
-    def wait_allcomplete(self):
-        for item in self.threads:
-            if item.isAlive():
-                item.join()
-
-
-class Work(threading.Thread):
-    def __init__(self, work_queue):
-        threading.Thread.__init__(self)
-        self.work_queue = work_queue
-        self.start()
-
-    def run(self):
-        # 死循环，从而让创建的线程在一定条件下关闭退出
-        while True:
-            try:
-                do, args = self.work_queue.get(block=True)  # 任务异步出队，Queue内部实现了同步机制
-                do(args)
-                self.work_queue.task_done()  # 通知系统任务完成
-            except Exception, e:
-                print args
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--all", help="crawl all urls", action="store_true", required=False)
     parser.add_argument("-i", "--increment", help="crawl increment urls", action="store_true", required=False)
     parser.add_argument("-f", "--fail", help="crawl failed urls", action="store_true", required=False)
     parser.add_argument("-p", "--proxy", help="crawl proxy address", action="store_true", required=False)
+    parser.add_argument("-d", "--debug", help="debug mode", action="store_true", required=False)
     args = parser.parse_args()
     url_f = "http://www.cnnvd.org.cn/web/vulnerability/querylist.tag?pageno={}&repairLd="
+    root_path = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(root_path)
 
-    proxies = None
-    if args.proxy:
-        proxies = get_proxy()
-        print 'get_proxy finished!'
+    options = read_conf()
+    cfg = RawConfigParser()
+    cfg.read('conf/settings.conf')
+    logging_dir_path = cfg.get('logging', 'logging_dir_path').strip()
+    if os.path.exists(logging_dir_path):
+        log_file = os.path.join(logging_dir_path, 'vul', 'cnnvd_' + today + '.log')
+    else:
+        log_file = os.path.splitext(__file__)[0] + '.log'
+    init_logging(log_file)
 
     if args.all:
         if not os.path.exists(cnt_file):
@@ -259,59 +251,66 @@ if __name__ == '__main__':
 
         latest_page_num = 1
         if os.path.exists(success_page_file):
-            latest_page = os.popen('tail -n 1 {}'.format(success_page_file)).read()[:-1]
+            latest_page = os.popen('tail -n 1 {}'.format(success_page_file)).read().strip()
             latest_page_num = int(latest_page[
                                   len(u'http://www.cnnvd.org.cn/web/vulnerability/querylist.tag?pageno='):
                                   -len(u'&repairLd=')])
         last_page_num = get_last_page_num(cnnvd_url)
         log.info('start from page: %s', latest_page_num)
+        log.info('current last page: %s', last_page_num)
 
-        print proxies
-        work_manager = WorkManager()
-        work_manager.wait_allcomplete()
+        for i in range(latest_page_num, last_page_num + 1):
+            parse_next_page(url_f.format(i))
 
-        # pool = Pool(processes=3, initializer=init_worker, maxtasksperchild=400)
-        # for i in range(1, 10):
-        #     try:
-        #         pool.apply(parse_next_page, (url_f.format(i),))
-        #     except Exception,e:
-        #         print e, i
-        # pool.close()
-        # pool.join()
+        last_page_num_1 = get_last_page_num(url_f.format(i))
+        if last_page_num < last_page_num_1:
+            for i in range(last_page_num + 1, last_page_num_1 + 1):
+                parse_next_page(url_f.format(i))
 
     if args.increment:
         assert os.path.exists(cnt_file), "execute 'python {} -a' first!".format(__file__)
-        cnt1_s = os.popen('tail -n 1 {}'.format(cnt_file)).read()[:-1]
+        cnt1_s = os.popen('tail -n 1 {}'.format(cnt_file)).read().strip()
         assert cnt1_s
         cnt1 = int(cnt1_s)
-        cnt = get_total_count(cnnvd_url)
-        if cnt == cnt1:
+        last_offset_num = get_total_count(cnnvd_url)
+        log.info('crawled count: %s, current total count: %s' % (cnt1, last_offset_num))
+        if last_offset_num == cnt1:
             log.info('no more new data!')
             sys.exit()
         with open(cnt_file, 'w') as f:
-            f.write(str(cnt))
+            f.write(str(last_offset_num))
 
-        delta = int(ceil((cnt - cnt1) / 10.0))
+        delta = int(ceil((last_offset_num - cnt1) / 10.0))
         for i in range(1, delta + 1):
             parse_next_page(url_f.format(i))
 
     if args.fail:
-        if os.path.exists(failed_page_file):
+        # what if it gets stuck, meaning it falls into a dead cycle, it rarely happens however.
+        assert not os.path.exists(failed_page_file_1), 'exists {}, handle it first.'.format(failed_page_file_1)
+        assert not os.path.exists(failed_url_file_1), 'exists {}, handle it first.'.format(failed_url_file_1)
+        while os.path.exists(failed_page_file):
             shutil.move(failed_page_file, failed_page_file_1)
-            pool = Pool(processes=5, initializer=init_worker, maxtasksperchild=400)
             with open(failed_page_file_1) as f:
-                lines = f.readlines()
-            for line in lines:
-                pool.apply_async(parse_next_page, (line[:-1],))
-            pool.close()
-            pool.join()
-            if os.path.exists(failed_page_file):
-                log.info('failed crawling failed pages!')
-            else:
-                log.info('finished crawling failed pages!')
+                for line in f:
+                    line_s = line.strip()
+                    if line_s:
+                        parse_next_page(line_s)
+            time.sleep(10)
+        else:
+            log.info('no failed page or finished crawling failed pages!')
 
+        while os.path.exists(failed_url_file):
+            shutil.move(failed_url_file, failed_url_file_1)
+            with open(failed_url_file_1) as f:
+                for line in f:
+                    line_s = line.strip()
+                    if line_s:
+                        parse_url(line_s)
+            time.sleep(10)
+        else:
+            log.info('no failed url or finished crawling failed urls!')
 
-
-                # craw(url)
-                # work_manager = WorkManager(20)
-                # work_manager.wait_allcomplete()
+    if args.proxy:
+        proxies = get_proxy()
+        print get_total_count(cnnvd_url)
+        print get_last_page_num(cnnvd_url)

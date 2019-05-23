@@ -2,15 +2,21 @@
 # coding=utf-8
 
 from selenium import webdriver
+from selenium.common.exceptions import NoSuchElementException
 from time import sleep
 import re
 import sys
 import os
 import pymysql
-from pymysql import IntegrityError
 from configparser import RawConfigParser
-import pysnooper
 import traceback
+import hashlib
+import logging.handlers
+
+TACTIC_COUNT = 40
+TECHNIQUE_COUNT = 485
+GROUP_COUNT = 86
+SOFTWARE_COUNT = 377
 
 
 def read_conf(conf_path):
@@ -26,25 +32,47 @@ def read_conf(conf_path):
 
 OPTIONS = read_conf('settings.conf')
 
-
-def handle_mysql(tb=''):
-    conn = pymysql.connect(**OPTIONS)
-    cur = conn.cursor()
-    sql = 'select * from {}'.format(tb)
-    cur.execute(sql)
-    _r = cur.fetchall()
-    cur.close()
-    conn.close()
-    return _r
+log = logging.getLogger('get_mitre')
 
 
-def scroll_end(driver, lang='cn'):
+def init_logging(log_file):
+    formatter = logging.Formatter('%(asctime)s [%(name)s] %(levelname)s: %(message)s')
+    fh = logging.handlers.WatchedFileHandler(log_file)
+    fh.setFormatter(formatter)
+    log.addHandler(fh)
+    ch = logging.StreamHandler()
+    ch.setFormatter(formatter)
+    log.addHandler(ch)
+
+    log.setLevel(logging.INFO)
+
+
+def is_chinese(string):
+    for ch in string:
+        if '\u4e00' <= ch <= '\u9fff':
+            return True
+    return False
+
+
+def sub_escape(string):
+    pattren1 = re.compile(r' \[\d+\]')
+    pattren2 = re.compile(r'\[\d+\]')
+    string1 = re.sub(pattren1, '', string)
+    string2 = re.sub(pattren2, '', string1)
+    return pymysql.escape_string(string2)
+
+
+def scroll_end(driver, lang='cn', type=''):
     if lang == 'en':
         return
-    height = driver.execute_script('return document.body.scrollHeight')
+    if type == 'software':
+        height = 4000
+    else:
+        height = driver.execute_script('return document.body.scrollHeight')
     step = 500
     scrolled_height = 0
-    while scrolled_height < height:
+    sleep(3)
+    while scrolled_height <= height:
         scrolled_height += step
         driver.execute_script("window.scrollTo(0,{})".format(scrolled_height))
         sleep(2)
@@ -63,51 +91,6 @@ def get_chrome_option(lang):
     return chrome_options
 
 
-def get_tactics(lang, options=OPTIONS):
-    entry_url = 'https://attack.mitre.org/tactics/enterprise/'
-    driver = webdriver.Chrome(options=get_chrome_option(lang))
-    driver.get(entry_url)
-    sleep(2)
-    scroll_end(driver, lang)
-    element = driver.find_element_by_xpath("//tbody[@class='bg-white']")
-    attack_tids = []
-    conn = pymysql.connect(**options)
-    cur = conn.cursor()
-    tb = 'mitre_tactics'
-    for tr in element.find_elements_by_tag_name('tr'):
-        value = list(map(lambda td: td.text, tr.find_elements_by_tag_name('td')))
-        attack_tids.append(value[0])
-        try:
-            if lang == 'cn':
-                sql_str = 'update {} set name_cn="{}",desc_cn="{}" where tid="{}"'.format(tb, value[1], value[2],
-                                                                                          value[0])
-                cur.execute(sql_str)
-            else:
-                fields = 'tid, name_en, desc_en'
-                sql_str = 'insert into {}({}) values({})'.format(tb, fields, ','.join(['%s'] * len(fields.split(','))))
-                cur.execute(sql_str, value)
-            conn.commit()
-        except:
-            print(traceback.format_exc())
-    cur.close()
-    conn.close()
-    driver.quit()
-    return attack_tids
-
-
-def get_tech_ids():
-    tech_url = 'https://attack.mitre.org/techniques/'
-    tech_ids = []
-    driver = webdriver.Chrome()
-    driver.get(tech_url)
-    element = driver.find_element_by_xpath("//tbody[@class='bg-white']")
-    for tr in element.find_elements_by_tag_name('tr'):
-        tech_id, name, desc = list(map(lambda td: td.text, tr.find_elements_by_tag_name('td')))
-        tech_ids.append(tech_id)
-    print(tech_ids, len(tech_ids))
-    return tech_ids
-
-
 class DB(object):
     def __init__(self, options=OPTIONS):
         self.conn = pymysql.connect(**options)
@@ -122,12 +105,23 @@ class DB(object):
         self.cur.close()
 
 
-def select_mysql(tb, sel_fileds, wh_fileds, wh_values):
+def select_mysql_is_not_null(tb, wh_filed=''):
+    assert wh_filed != ''
+    sql = 'select count(1) from {} where {} is not NULL'.format(tb, wh_filed)
+    with DB() as cur:
+        cur.execute(sql)
+        result = cur.fetchone()
+    return result
+
+
+def select_mysql(tb, sel_fileds, wh_fileds='', wh_values=[]):
     # fields = 'tid, name_en, attack_id'
-    wh_fileds = wh_fileds.split(',')
-    wh_str = ' and '.join([str(f) + '="' + str(v) + '"' for f, v in zip(wh_fileds, wh_values)])
-    if wh_str:
-        wh_str = 'where ' + wh_str
+    if wh_fileds:
+        wh_fileds = wh_fileds.split(',')
+        wh_str = 'where ' + ' and '.join([str(f) + '="' + str(v) + '"' for f, v in zip(wh_fileds, wh_values)])
+    else:
+        wh_str = ''
+
     sql = 'select {} from {} {}'.format(sel_fileds, tb, wh_str)
     with DB() as cur:
         cur.execute(sql)
@@ -135,17 +129,20 @@ def select_mysql(tb, sel_fileds, wh_fileds, wh_values):
     return result
 
 
-def insert_mysql(tb, fields, values):
+def insert_mysql(tb, fields, values, many_flag=0):
     # fields = 'tid,name_en,attack_id'
     sql = 'insert into {}({}) values({})'.format(tb, fields, ','.join(['%s'] * len(values)))
     with DB() as cur:
         try:
-            cur.execute(sql, values)
+            if many_flag == 0:
+                cur.execute(sql, values)
+            else:
+                cur.executemany(sql, values)
         except Exception as e:
             if e.args[0] == 1062:  # Duplicate entry
                 pass
             else:
-                print(traceback.format_exc())
+                log.error(traceback.format_exc())
 
 
 def update_mysql(tb, set_fields, set_values, wh_fileds, wh_values):
@@ -159,105 +156,401 @@ def update_mysql(tb, set_fields, set_values, wh_fileds, wh_values):
         cur.execute(sql)
 
 
-def get_techniques(tech_ids, lang, options=OPTIONS):
+def get_tactics(lang):
+    if lang == 'en':
+        if TACTIC_COUNT == select_mysql_is_not_null('mitre_tactics', 'desc_en')[0]:
+            return
+    else:
+        if TACTIC_COUNT == select_mysql_is_not_null('mitre_tactics', 'desc_cn')[0]:
+            return
+
+    _url_prefix = 'https://attack.mitre.org/tactics/'
+    domains = ['pre', 'enterprise', 'mobile']
     driver = webdriver.Chrome(options=get_chrome_option(lang))
-    tech_ids = ['T1156', 'T1134', 'T1015', 'T1087', 'T1098', 'T1182', 'T1103', 'T1155', 'T1017', 'T1138', 'T1010',
-                'T1123', 'T1131', 'T1119', 'T1020', 'T1139', 'T1009', 'T1197', 'T1067', 'T1217', 'T1176', 'T1110',
-                'T1088', 'T1042', 'T1146', 'T1115', 'T1191', 'T1116', 'T1059', 'T1043', 'T1092', 'T1223', 'T1109',
-                'T1122', 'T1090', 'T1196', 'T1136', 'T1003', 'T1081', 'T1214', 'T1094', 'T1024', 'T1002', 'T1132',
-                'T1022', 'T1213', 'T1005', 'T1039', 'T1025', 'T1001', 'T1074', 'T1030', 'T1207', 'T1140', 'T1089',
-                'T1175', 'T1038', 'T1073', 'T1172', 'T1189', 'T1157', 'T1173', 'T1114', 'T1106', 'T1129', 'T1048',
-                'T1041', 'T1011', 'T1052', 'T1190', 'T1203', 'T1212', 'T1211', 'T1068', 'T1210', 'T1133', 'T1181',
-                'T1008', 'T1083', 'T1107', 'T1222', 'T1006', 'T1044', 'T1187', 'T1144', 'T1061', 'T1200', 'T1158',
-                'T1147', 'T1143', 'T1148', 'T1179', 'T1062', 'T1183', 'T1054', 'T1066', 'T1070', 'T1202', 'T1056',
-                'T1141', 'T1130', 'T1118', 'T1208', 'T1215', 'T1142', 'T1159', 'T1160', 'T1152', 'T1161', 'T1149',
-                'T1171', 'T1168', 'T1162', 'T1037', 'T1177', 'T1185', 'T1036', 'T1031', 'T1112', 'T1170', 'T1188',
-                'T1104', 'T1026', 'T1079', 'T1128', 'T1046', 'T1126', 'T1135', 'T1040', 'T1050', 'T1096', 'T1027',
-                'T1137', 'T1075', 'T1097', 'T1174', 'T1201', 'T1034', 'T1120', 'T1069', 'T1150', 'T1205', 'T1013',
-                'T1086', 'T1145', 'T1057', 'T1186', 'T1093', 'T1055', 'T1012', 'T1163', 'T1164', 'T1108', 'T1060',
-                'T1121', 'T1117', 'T1219', 'T1076', 'T1105', 'T1021', 'T1018', 'T1091', 'T1014', 'T1085', 'T1053',
-                'T1029', 'T1113', 'T1180', 'T1064', 'T1063', 'T1101', 'T1167', 'T1035', 'T1058', 'T1166', 'T1051',
-                'T1023', 'T1178', 'T1218', 'T1216', 'T1198', 'T1045', 'T1153', 'T1151', 'T1193', 'T1192', 'T1194',
-                'T1184', 'T1071', 'T1032', 'T1095', 'T1165', 'T1169', 'T1206', 'T1195', 'T1019', 'T1082', 'T1016',
-                'T1049', 'T1033', 'T1007', 'T1124', 'T1080', 'T1221', 'T1072', 'T1209', 'T1099', 'T1154', 'T1127',
-                'T1199', 'T1111', 'T1065', 'T1204', 'T1078', 'T1125', 'T1102', 'T1100', 'T1077', 'T1047', 'T1084',
-                'T1028', 'T1004', 'T1220']
-    tech_url_prefix = 'https://attack.mitre.org/techniques/'
-    for tech_id in tech_ids:
-        tech_id = 'T1091'
-        tech_url = tech_url_prefix + tech_id + '/'
-        driver.get(tech_url)
-        sleep(2)
+    for domain in domains:
+        _url = _url_prefix + domain + '/'
+        driver.get(_url)
+        if lang == 'cn':
+            sleep(40)
+        scroll_end(driver, lang)
+        root = driver.find_element_by_xpath('//tbody[@class="bg-white"]')
+        for tr in root.find_elements_by_xpath('tr'):
+            tds = tr.find_elements_by_xpath('td')
+            tid = tds[0].text
+            name = tds[1].text
+            desc = pymysql.escape_string(tds[2].text)
+            if lang == 'en':
+                insert_mysql('mitre_tactics', 'tid,domain,name_en,desc_en', [tid, domain, name, desc])
+            else:
+                if is_chinese(desc):
+                    update_mysql('mitre_tactics', 'name_cn,desc_cn', [name, desc], 'tid', [tid])
+                else:
+                    log.error('url[%s] not translated successfully', _url)
+                    break
+
+    driver.quit()
+
+
+def get_technique_ids():
+    if TECHNIQUE_COUNT == select_mysql('mitre_techniques', 'count(1)')[0][0]:
+        return
+
+    _url_prefix = 'https://attack.mitre.org/techniques/'
+    domains = ['pre', 'enterprise', 'mobile']
+    driver = webdriver.Chrome()
+    for domain in domains:
+        _url = _url_prefix + domain + '/'
+        driver.get(_url)
+        element = driver.find_element_by_xpath("//tbody[@class='bg-white']")
+        for tr in element.find_elements_by_tag_name('tr'):
+            _id = tr.find_element_by_tag_name('td').text
+            insert_mysql('mitre_techniques', 'tid,domain', [_id, domain])
+    driver.quit()
+
+
+def get_techniques(lang):
+    _ids = sum(select_mysql('mitre_techniques', 'tid'), ())
+    flag_txt = 'tech_flag_{}.txt'.format(lang)
+    if not os.path.exists(flag_txt):
+        open(flag_txt, 'w').close()
+    with open(flag_txt) as f:
+        processed_ids = list(map(lambda line: line[:-1], f.readlines()))
+
+    driver = webdriver.Chrome(options=get_chrome_option(lang))
+    _url_prefix = 'https://attack.mitre.org/techniques/'
+    for _id in _ids:
+        if _id in processed_ids:
+            continue
+        log.info('processing technique: %s', _id)
+
+        _url = _url_prefix + _id + '/'
+        driver.get(_url)
         scroll_end(driver, lang)
         root = driver.find_elements_by_class_name('container-fluid')[1]
-        # relation between tatic and techique
-        if lang == 'en':
-            tatics = root.find_elements_by_class_name('card-data')[2].text
-            tatics = map(lambda x: x.strip(), tatics[len('Tactic: '):].split(','))
-            for tatic in tatics:
-                tatic_id = select_mysql('mitre_tactics', 'tid', 'name_en', [tatic])[0][0]
-                insert_mysql('mitre_rel_tactic_tech', 'tact_id,tech_id', [tatic_id, tech_id])
-
-        # related groups
-        groups_e = root.find_element_by_xpath('//tbody[@class="bg-white"]')
-        for tr in groups_e.find_elements_by_xpath('tr'):
-            exam_id = tr.find_element_by_xpath('td/a[@href]').get_attribute('href').split('/')[-1]
-            desc = tr.find_element_by_xpath('td/p').text.split('[')[0]
-            # print(exam_id, desc)
-            if exam_id.startswith('S'):
-                # relation between technique and Software
-                if lang == 'en':
-                    insert_mysql('mitre_rel_tech_software', 'tid,sid,desc_en', [tech_id, exam_id, desc])
-                else:
-                    update_mysql('mitre_rel_tech_software', 'desc_cn', [desc], 'tid,sid', [tech_id, exam_id])
-            elif exam_id.startswith('G'):
-                # relation between technique and Group
-                if lang == 'en':
-                    insert_mysql('mitre_rel_tech_group', 'tid,gid,desc_en', [tech_id, exam_id, desc])
-                else:
-                    update_mysql('mitre_rel_tech_group', 'desc_cn', [desc], 'tid,gid', [tech_id, exam_id])
 
         # technique name
         name = root.find_element_by_tag_name('h1').text.strip()
         # technique name
         desc = root.find_element_by_xpath('div/div').text
+        desc = sub_escape(desc)
 
-        print(len(root.find_elements()))
-        # root.find_element_by_xpath('h2/../div').text
+        if lang == 'cn' and not is_chinese(desc):
+            log.error('url[%s] not translated successfully', _url)
+            continue
 
-        sys.exit()
-        a = driver.find_elements_by_tag_name('h2')
-        for _a in a:
-            print(_a.text)
-        break
+        # relation between techique and tatic
+        if lang == 'en':
+            tatics = root.find_elements_by_class_name('card-data')[2].text
+            tatics = map(lambda x: x.strip(), tatics[len('Tactic: '):].split(','))
+            for tatic in tatics:
+                result = select_mysql('mitre_tactics', 'tid', 'name_en', [tatic])
+                if result:  # else---*Deprecation Warning****
+                    tatic_id = result[0][0]
+                    insert_mysql('mitre_rel_tech_tactic', 'tech_id,tact_id', [_id, tatic_id])
 
-        element = driver.find_element_by_xpath("//tbody[@class='bg-white']")
-        for tr in element.find_elements_by_tag_name('tr'):
-            value = list(map(lambda td: td.text, tr.find_elements_by_tag_name('td')))
-            event_tids.append(value[0])
-            value = value[:2] + [event_tid]
-            try:
-                if lang == 'cn':
-                    sql_str = 'update {} set name_cn="{}" where tid="{}"'.format(tb, value[1].strip('的'), value[0])
-                    cur.execute(sql_str)
-                else:
-                    fields = 'tid, name_en, attack_id'
-                    sql_str = 'insert into {}({}) values({})'.format(tb, fields,
-                                                                     ','.join(['%s'] * len(fields.split(','))))
-                    cur.execute(sql_str, value)
-                conn.commit()
-            except:
-                print(traceback.format_exc())
+        # related groups
+        try:
+            table_e = root.find_element_by_xpath('//tbody[@class="bg-white"]')
+            for tr in table_e.find_elements_by_xpath('tr'):
+                exam_id = tr.find_element_by_xpath('td/a[@href]').get_attribute('href').split('/')[-1]
+                desc = tr.find_element_by_xpath('td/p').text
+                desc = sub_escape(desc)
+
+                if exam_id.startswith('S'):
+                    # relation between technique and Software
+                    if lang == 'en':
+                        insert_mysql('mitre_rel_tech_software', 'tid,sid,desc_en', [_id, exam_id, desc])
+                    else:
+                        update_mysql('mitre_rel_tech_software', 'desc_cn', [desc], 'tid,sid', [_id, exam_id])
+                elif exam_id.startswith('G'):
+                    # relation between technique and Group
+                    if lang == 'en':
+                        insert_mysql('mitre_rel_tech_group', 'tid,gid,desc_en', [_id, exam_id, desc])
+                    else:
+                        update_mysql('mitre_rel_tech_group', 'desc_cn', [desc], 'tid,gid', [_id, exam_id])
+        except NoSuchElementException:
+            # T1006 T1013 T1042 T1051 T1054 T1058 T1062 T1118 T1121 T1139 T1143 T1144 T1146 T1147 T1148 T1149 T1150...
+            log.info('technique[%s] has no example.', _id)
+
+        miti_data = ''
+        dete_data = ''
+        try:
+            # get Mitigation
+            miti = root.find_element_by_xpath("h2[@id='mitigation']/following::*")
+            while miti.tag_name != 'h2':
+                miti_data = miti_data + miti.text + '\n'
+                miti = miti.find_element_by_xpath('following::*')
+            miti_data = sub_escape(miti_data.strip())
+
+            # get Detection
+            dete = root.find_element_by_xpath("h2[@id='detection']/following::*")
+            while dete.tag_name != 'h2':
+                dete_data = dete_data + dete.text + '\n'
+                dete = dete.find_element_by_xpath('following::*')
+            dete_data = sub_escape(dete_data.strip())
+        except NoSuchElementException:
+            pass
+
+        if lang == 'en':
+            refs_e = driver.find_elements_by_class_name('scite-citation-text')
+            for ref_e in refs_e:
+                ref = ref_e.text
+                md5 = hashlib.md5()
+                md5.update((ref + _id).encode('utf8'))
+                rid = md5.hexdigest()
+
+                try:
+                    url = ref_e.find_element_by_tag_name('a').get_attribute('href')
+                except NoSuchElementException:
+                    url = ''
+                    log.info('ref[%s] has no url.', rid)
+                insert_mysql('mitre_references', 'rid,ref,url,technique_id', [rid, ref, url, _id])
+
+        if lang == 'en':
+            update_mysql('mitre_techniques', 'name_en,desc_en,mitigation_en,detection_en',
+                         [name, desc, miti_data, dete_data], 'tid', [_id])
+        else:
+            update_mysql('mitre_techniques', 'name_cn,desc_cn,mitigation_cn,detection_cn',
+                         [name, desc, miti_data, dete_data], 'tid', [_id])
+
+        with open(flag_txt, 'a') as f:
+            f.write(_id + '\n')
     driver.quit()
-    return event_tids
+
+
+def get_group_ids(lang):
+    if lang == 'en':
+        if GROUP_COUNT == select_mysql_is_not_null('mitre_groups', 'desc_en')[0]:
+            return
+    else:
+        if GROUP_COUNT == select_mysql_is_not_null('mitre_groups', 'desc_cn')[0]:
+            return
+
+    base_url = 'https://attack.mitre.org/groups/'
+    driver = webdriver.Chrome(options=get_chrome_option(lang))
+    driver.get(base_url)
+    if lang == 'cn':
+        sleep(40)
+    scroll_end(driver, lang)
+    element = driver.find_element_by_xpath("//tbody[@class='bg-white']")
+    for tr in element.find_elements_by_tag_name('tr'):
+        tds = tr.find_elements_by_tag_name('td')
+        gid = tds[0].find_element_by_tag_name('a').get_attribute('href').split('/')[-2]
+        name = tds[0].text
+        alias = tds[1].text
+        desc = tds[2].text
+        if lang == 'en':
+            insert_mysql('mitre_groups', 'gid,name,alias,desc_en', [gid, name, alias, desc])
+        else:
+            if is_chinese(desc):
+                update_mysql('mitre_groups', 'desc_cn', [desc], 'gid', [gid])
+            else:
+                log.error('url[%s] not translated successfully', base_url)
+                break
+
+    driver.quit()
+
+
+def get_groups(lang):
+    _ids = sum(select_mysql('mitre_groups', 'gid'), ())
+    flag_txt = 'group_flag_{}.txt'.format(lang)
+    if not os.path.exists(flag_txt):
+        open(flag_txt, 'w').close()
+    with open(flag_txt) as f:
+        processed_ids = list(map(lambda line: line[:-1], f.readlines()))
+
+    driver = webdriver.Chrome(options=get_chrome_option(lang))
+
+    _url_prefix = 'https://attack.mitre.org/groups/'
+    for _id in _ids:
+        if _id in processed_ids:
+            continue
+        log.info('processing group: %s', _id)
+        _url = _url_prefix + _id + '/'
+        driver.get(_url)
+        scroll_end(driver, lang)
+        root = driver.find_elements_by_class_name('container-fluid')[1]
+
+        desc = root.find_element_by_xpath('div/div').text
+        desc = sub_escape(desc)
+        if lang == 'cn' and not is_chinese(desc):
+            log.error('url[%s] not translated successfully', _url)
+            continue
+
+        # relation between group and technique
+        try:
+            table_e = root.find_element_by_xpath("h2[@id='techniques']/following::*").find_element_by_xpath(
+                'tbody[@class="bg-white"]')
+            for tr in table_e.find_elements_by_xpath('tr'):
+                tds = tr.find_elements_by_xpath('td')
+                domain = tds[0].text
+                tid = tds[1].text
+                name = tds[2].text
+                use = sub_escape(tds[3].text)
+
+                if lang == 'en':
+                    insert_mysql('mitre_rel_group_tech', 'group_id,tech_id,domain,name_en,use_en',
+                                 [_id, tid, domain, name, use])
+                else:
+                    update_mysql('mitre_rel_group_tech', 'name_cn,use_cn', [name, use], 'group_id,tech_id', [_id, tid])
+        except NoSuchElementException:
+            log.info('group[%s] has no technique.', _id)
+
+        # relation between group and software
+        try:
+            table_e = root.find_element_by_xpath("h2[@id='software']/following::*").find_element_by_xpath(
+                'tbody[@class="bg-white"]')
+            for tr in table_e.find_elements_by_xpath('tr'):
+                tds = tr.find_elements_by_xpath('td')
+                sid = tds[0].text
+                name = tds[1].text
+                techniques = tds[-1].text
+                if lang == 'en':
+                    insert_mysql('mitre_rel_group_software', 'group_id,software_id,name,techniques',
+                                 [_id, sid, name, techniques])
+        except NoSuchElementException:
+            log.info('group[%s] has no software.', _id)
+
+        # relation between group and reference
+        if lang == 'en':
+            refs_e = driver.find_elements_by_class_name('scite-citation-text')
+            for ref_e in refs_e:
+                ref = ref_e.text
+                md5 = hashlib.md5()
+                md5.update((ref + _id).encode('utf8'))
+                rid = md5.hexdigest()
+
+                try:
+                    url = ref_e.find_element_by_tag_name('a').get_attribute('href')
+                except NoSuchElementException:
+                    url = ''
+                    log.info('ref[%s] has no url.', rid)
+                insert_mysql('mitre_references', 'rid,ref,url,group_id', [rid, ref, url, _id])
+
+        with open(flag_txt, 'a') as f:
+            f.write(_id + '\n')
+    driver.quit()
+
+
+def get_software_ids(lang):
+    if lang == 'en':
+        if SOFTWARE_COUNT == select_mysql_is_not_null('mitre_softwares', 'desc_en')[0]:
+            return
+    else:
+        if SOFTWARE_COUNT == select_mysql_is_not_null('mitre_softwares', 'desc_cn')[0]:
+            return
+
+    base_url = 'https://attack.mitre.org/software/'
+    driver = webdriver.Chrome(options=get_chrome_option(lang))
+    driver.get(base_url)
+    if lang == 'cn':
+        sleep(40)
+    scroll_end(driver, lang)
+    element = driver.find_element_by_xpath("//tbody[@class='bg-white']")
+    for tr in element.find_elements_by_tag_name('tr'):
+        tds = tr.find_elements_by_tag_name('td')
+        sid = tds[0].find_element_by_tag_name('a').get_attribute('href').split('/')[-1]
+        name = tds[0].text
+        associated_software = tds[1].text
+        desc = tds[2].text
+        if lang == 'en':
+            insert_mysql('mitre_softwares', 'sid,name,associated_software,desc_en',
+                         [sid, name, associated_software, desc])
+        else:
+            if is_chinese(desc):
+                update_mysql('mitre_softwares', 'desc_cn', [desc], 'sid', [sid])
+            else:
+                log.error('url[%s] not translated successfully', base_url)
+                break
+    driver.quit()
+
+
+def get_softwares(lang):
+    _ids = sum(select_mysql('mitre_softwares', 'sid'), ())
+    flag_txt = 'software_flag_{}.txt'.format(lang)
+    if not os.path.exists(flag_txt):
+        open(flag_txt, 'w').close()
+    with open(flag_txt) as f:
+        processed_ids = list(map(lambda line: line[:-1], f.readlines()))
+
+    driver = webdriver.Chrome(options=get_chrome_option(lang))
+
+    _url_prefix = 'https://attack.mitre.org/software/'
+    for _id in _ids:
+        if _id in processed_ids:
+            continue
+        log.info('processing software: %s', _id)
+        _url = _url_prefix + _id + '/'
+        driver.get(_url)
+        scroll_end(driver, lang, 'software')
+        root = driver.find_elements_by_class_name('container-fluid')[1]
+
+        desc = root.find_element_by_xpath('div/div').text
+        desc = sub_escape(desc)
+        if lang == 'cn' and not is_chinese(desc):
+            log.error('url[%s] not translated successfully', _url)
+            continue
+
+        # relation between software and technique
+        try:
+            table_e = root.find_element_by_xpath("h2[@id='techniques']/following::*").find_element_by_xpath(
+                'tbody[@class="bg-white"]')
+            for tr in table_e.find_elements_by_xpath('tr'):
+                tds = tr.find_elements_by_xpath('td')
+                domain = tds[0].text
+                tid = tds[1].text
+                name = tds[2].text
+                use = sub_escape(tds[3].text)
+                if lang == 'en':
+                    insert_mysql('mitre_rel_software_tech', 'software_id,tech_id,domain,name_en,use_en',
+                                 [_id, tid, domain, name, use])
+                else:
+                    update_mysql('mitre_rel_software_tech', 'name_cn,use_cn', [name, use], 'software_id,tech_id',
+                                 [_id, tid])
+        except NoSuchElementException:
+            log.info('software[%s] has no technique.', _id)
+
+        # relation between software and group
+        if lang == 'en':
+            try:
+                group_e = root.find_element_by_xpath("h2[@id='groups']/following::*/following::*")
+                while group_e.tag_name == 'a':
+                    gid = group_e.get_attribute('href').split('/')[-2]
+                    name = group_e.text
+                    insert_mysql('mitre_rel_software_group', 'software_id,group_id,name', [_id, gid, name])
+                    group_e = group_e.find_element_by_xpath('following::*/following::*')
+            except NoSuchElementException:
+                log.info('software[%s] has no group.', _id)
+
+        # relation between software and reference
+        if lang == 'en':
+            refs_e = driver.find_elements_by_class_name('scite-citation-text')
+            for ref_e in refs_e:
+                ref = ref_e.text
+                md5 = hashlib.md5()
+                md5.update((ref + _id).encode('utf8'))
+                rid = md5.hexdigest()
+
+                try:
+                    url = ref_e.find_element_by_tag_name('a').get_attribute('href')
+                except NoSuchElementException:
+                    url = ''
+                    log.info('ref[%s] has no url.', rid)
+                insert_mysql('mitre_references', 'rid,ref,url,software_id', [rid, ref, url, _id])
+
+        with open(flag_txt, 'a') as f:
+            f.write(_id + '\n')
+    driver.quit()
 
 
 if __name__ == '__main__':
-    # attack_tids = get_tactics(options, 'en')
-    # attack_tids = get_tactics(options, 'cn')
-    # tech_ids = get_tech_ids()
-    # event_tids = get_techniques(None, options, 'en')
-    # event_tids = get_techniques(None, options, 'cn')
-
-    get_techniques(None, 'en')
-    get_techniques(None, 'cn')
+    init_logging('get_mitre.log')
+    langs = ['en', 'cn']
+    for lang in langs:
+        get_tactics(lang)
+        get_technique_ids()
+        get_techniques(lang)
+        get_group_ids(lang)
+        get_groups(lang)
+        get_software_ids(lang)
+        get_softwares(lang)
