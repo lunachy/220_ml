@@ -10,6 +10,7 @@ import logging.handlers
 import time
 import sys
 from multiprocessing import cpu_count, Pool
+from functools import reduce
 import cPickle
 import numpy as np
 import pandas as pd
@@ -46,16 +47,21 @@ test_count = 9398
 total_count = train_count + test_count
 
 log = logging.getLogger()
-formatter = logging.Formatter('%(asctime)s [%(name)s] %(levelname)s: %(message)s')
 
-fh = logging.handlers.WatchedFileHandler(os.path.join(log_dir, os.path.splitext(__file__)[0] + '.log'))
-fh.setFormatter(formatter)
-log.addHandler(fh)
-ch = logging.StreamHandler()
-ch.setFormatter(formatter)
-log.addHandler(ch)
 
-log.setLevel(logging.INFO)
+def init_logging(log_file=os.path.join(log_dir, os.path.splitext(__file__)[0] + '.log'), debug=False):
+    formatter = logging.Formatter('%(asctime)s [%(name)s] %(levelname)s: %(message)s')
+    fh = logging.handlers.WatchedFileHandler(log_dir + log_file + '.log')
+    fh.setFormatter(formatter)
+    log.addHandler(fh)
+    ch = logging.StreamHandler()
+    ch.setFormatter(formatter)
+    log.addHandler(ch)
+    level = logging.DEBUG if debug else logging.INFO
+    log.setLevel(level)
+
+
+init_logging()
 
 
 def log_decorate(func):
@@ -142,7 +148,8 @@ def multi_encoding_l_c(list_input, filter_count=0):
     :return: encoded result
     """
     all_types = []
-    print list_input[0]
+    print
+    list_input[0]
     if isinstance(list_input[0], types.ListType):
         all_count = Counter(list(chain(*list_input)))
         # [Counter({1: 3, 3: 1, 5: 1}), Counter({1: 2, 3: 2, 7: 2})] --> Counter({1: 5, 3: 3, 5: 1, 7: 2})
