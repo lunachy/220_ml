@@ -11,7 +11,7 @@ import time
 import sys
 from multiprocessing import cpu_count, Pool
 from functools import reduce
-import cPickle
+import Pickle
 import numpy as np
 import pandas as pd
 import pefile
