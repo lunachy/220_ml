@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 import time
 from captura.courses import COURSES
+import xml.etree.cElementTree as ET
 
 course_names = [i["name"] for i in COURSES[38].values()]
 
@@ -53,9 +54,30 @@ def cvr_fmt():
         file.rename(file.with_suffix(".jpg"))
 
 
-def generate_xml():
-    pass
+def generate_xml(path):
+    x, y = 116, 22
+    width, height = 1920, 1080
+    last_tree = None
+    for file in Path(path).glob("*.jpg"):
+        xml_file = file.with_suffix(".xml")
+        if xml_file.exists():
+            tree = ET.ElementTree(file=xml_file)
+            tree.find("filename").text = file.name
+            tree.find("path").text = str(file)
+            xmin = tree.find("object/bndbox/xmin")
+            xmax = tree.find("object/bndbox/xmax")
+            ymin = tree.find("object/bndbox/ymin")
+            ymax = tree.find("object/bndbox/ymax")
+
+            xmax.text = str(min(int(xmin.text) + x, width))
+            ymax.text = str(min(int(ymin.text) + y, height))
+            tree.write(f'D:/xml/{xml_file.name}')
+            last_tree = tree
+        else:
+            last_tree.find("filename").text = file.name
+            last_tree.find("path").text = str(file)
+            last_tree.write(f'D:/xml/{xml_file.name}')
 
 
 if __name__ == "__main__":
-    cvt_color(r"D:\BaiduNetdiskDownload\我是钱冷门竞价38期\微信加粉")
+    generate_xml(r"D:\Projects\220_ml\captura\images")
