@@ -1,0 +1,10 @@
+countdown : 2 # 录屏倒计时（秒）
+record_time : 60 # 录屏时间
+top : 0 # 录屏窗口离屏幕顶部距离
+left : 0 # 录屏窗口离屏幕左边距离
+width : 1920 # 录屏宽度
+height : 1080 # 录屏高度
+mon : 1 # 录屏显示器id，默认为1
+fps : 15
+debug : true
+
